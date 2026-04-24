@@ -1164,6 +1164,48 @@
                         <var name="qr" array_group="moist" units="kg kg^{-1}"
                              description="Rain water mixing ratio"/>
 
+                        <var name="so2" array_group="chem" units="kg kg^{-1}"
+                             description="Sulfur dioxide mixing ratio"/>
+
+                        <var name="nh3" array_group="chem" units="kg kg^{-1}"
+                             description="Ammonia mixing ratio"/>
+
+                        <var name="no" array_group="chem" units="kg kg^{-1}"
+                             description="Nitric oxide mixing ratio"/>
+
+                        <var name="no2" array_group="chem" units="kg kg^{-1}"
+                             description="Nitrogen dioxide mixing ratio"/>
+
+                        <var name="n2o" array_group="chem" units="kg kg^{-1}"
+                             description="Nitrous oxide mixing ratio"/>
+
+                        <var name="o3" array_group="chem" units="kg kg^{-1}"
+                             description="Ozone mixing ratio"/>
+
+                        <var name="ch4" array_group="chem" units="kg kg^{-1}"
+                             description="Methane mixing ratio"/>
+
+                        <var name="co" array_group="chem" units="kg kg^{-1}"
+                             description="Carbon monoxide mixing ratio"/>
+
+                        <var name="co2" array_group="chem" units="kg kg^{-1}"
+                             description="Carbon dioxide mixing ratio"/>
+
+                        <var name="bc" array_group="chem" units="kg kg^{-1}"
+                             description="Black carbon aerosol mixing ratio"/>
+
+                        <var name="oc" array_group="chem" units="kg kg^{-1}"
+                             description="Organic carbon aerosol mixing ratio"/>
+
+                        <var name="pm25" array_group="chem" units="kg kg^{-1}"
+                             description="PM2.5 aerosol mixing ratio"/>
+
+                        <var name="pm10" array_group="chem" units="kg kg^{-1}"
+                             description="PM10 aerosol mixing ratio"/>
+
+                        <var name="dust_1" array_group="chem" units="kg kg^{-1}"
+                             description="Dust type 1 aerosol mixing ratio"/>
+
                         <var name="nifa" array_group="number" units="nb kg^{-1}"
                              description="Gocart ice-friendly aerosol number concentration"
                              packages="mp_thompson_aers_in"/>
@@ -1207,6 +1249,48 @@
 
                         <var name="lbc_qr" array_group="moist" units="kg kg^{-1}"
                              description="Rain water mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_so2" array_group="chem" units="kg kg^{-1}"
+                             description="Sulfur dioxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_nh3" array_group="chem" units="kg kg^{-1}"
+                             description="Ammonia mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_no" array_group="chem" units="kg kg^{-1}"
+                             description="Nitric oxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_no2" array_group="chem" units="kg kg^{-1}"
+                             description="Nitrogen dioxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_n2o" array_group="chem" units="kg kg^{-1}"
+                             description="Nitrous oxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_o3" array_group="chem" units="kg kg^{-1}"
+                             description="Ozone mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_ch4" array_group="chem" units="kg kg^{-1}"
+                             description="Methane mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_co" array_group="chem" units="kg kg^{-1}"
+                             description="Carbon monoxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_co2" array_group="chem" units="kg kg^{-1}"
+                             description="Carbon dioxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_bc" array_group="chem" units="kg kg^{-1}"
+                             description="Black carbon aerosol mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_oc" array_group="chem" units="kg kg^{-1}"
+                             description="Organic carbon aerosol mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_pm25" array_group="chem" units="kg kg^{-1}"
+                             description="PM2.5 aerosol mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_pm10" array_group="chem" units="kg kg^{-1}"
+                             description="PM10 aerosol mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_dust_1" array_group="chem" units="kg kg^{-1}"
+                             description="Dust type 1 aerosol mixing ratio on lateral boundary cells"/>
 
                         <var name="lbc_nifa" array_group="number" units="nb kg^{-1}"
                              description="Gocart ice-friendly aerosol number concentration on lateral boundary cells"
