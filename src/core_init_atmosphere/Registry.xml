@@ -1179,6 +1179,9 @@
                         <var name="n2o" array_group="chem" units="kg kg^{-1}"
                              description="Nitrous oxide mixing ratio"/>
 
+                        <var name="oh" array_group="chem" units="kg kg^{-1}"
+                             description="Hydroxyl radical mixing ratio"/>
+
                         <var name="o3" array_group="chem" units="kg kg^{-1}"
                              description="Ozone mixing ratio"/>
 
@@ -1264,6 +1267,9 @@
 
                         <var name="lbc_n2o" array_group="chem" units="kg kg^{-1}"
                              description="Nitrous oxide mixing ratio on lateral boundary cells"/>
+
+                        <var name="lbc_oh" array_group="chem" units="kg kg^{-1}"
+                             description="Hydroxyl radical mixing ratio on lateral boundary cells"/>
 
                         <var name="lbc_o3" array_group="chem" units="kg kg^{-1}"
                              description="Ozone mixing ratio on lateral boundary cells"/>

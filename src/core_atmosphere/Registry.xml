@@ -1768,6 +1768,10 @@
                              description="Nitrous oxide mixing ratio"
                              packages="chem_musica"/>
 
+                        <var name="oh" array_group="chem" units="kg kg^{-1}"
+                             description="Hydroxyl radical mixing ratio"
+                             packages="chem_musica"/>
+
                         <var name="o3" array_group="chem" units="kg kg^{-1}"
                              description="Ozone mixing ratio"
                              packages="chem_musica"/>
@@ -2192,6 +2196,10 @@
                              description="Tendency of nitrous oxide mass per unit volume divided by d(zeta)/dz"
                              packages="chem_musica"/>
 
+                        <var name="tend_oh" name_in_code="oh" array_group="chem" units="kg m^{-3} s^{-1}"
+                             description="Tendency of hydroxyl radical mass per unit volume divided by d(zeta)/dz"
+                             packages="chem_musica"/>
+
                         <var name="tend_o3" name_in_code="o3" array_group="chem" units="kg m^{-3} s^{-1}"
                              description="Tendency of ozone mass per unit volume divided by d(zeta)/dz"
                              packages="chem_musica"/>
@@ -2335,6 +2343,11 @@
                         <var name="lbc_n2o" name_in_code="n2o" array_group="chem"
                              units="kg kg^{-1} s^{-1}"
                              description="Lateral boundary tendency of nitrous oxide mixing ratio"
+                             packages="chem_musica"/>
+
+                        <var name="lbc_oh" name_in_code="oh" array_group="chem"
+                             units="kg kg^{-1} s^{-1}"
+                             description="Lateral boundary tendency of hydroxyl radical mixing ratio"
                              packages="chem_musica"/>
 
                         <var name="lbc_o3" name_in_code="o3" array_group="chem"
