@@ -1172,6 +1172,30 @@
 #endif
 		</stream>
 
+#ifdef MPAS_USE_MUSICA
+		<stream name="chem_emissions"
+                        type="input"
+                        filename_template="emi.$Y-$M-$D_$h.$m.$s.nc"
+                        filename_interval="input_interval"
+                        input_interval="1:00:00"
+                        immutable="true"
+                        packages="chem_musica">
+
+			<var name="emi_so2"/>
+			<var name="emi_nh3"/>
+			<var name="emi_no"/>
+			<var name="emi_no2"/>
+			<var name="emi_n2o"/>
+			<var name="emi_ch4"/>
+			<var name="emi_co"/>
+			<var name="emi_co2"/>
+			<var name="emi_bc"/>
+			<var name="emi_oc"/>
+			<var name="emi_pm25"/>
+			<var name="emi_pm10"/>
+		</stream>
+#endif
+
 	        <stream name="iau" 
                         type="input" 
                         filename_template="x1.40962.AmB.$Y-$M-$D_$h.$m.$s.nc" 
@@ -1809,6 +1833,55 @@
                              packages="chem_musica"/>
 #endif
                 </var_array>
+#ifdef MPAS_USE_MUSICA
+                <var name="emi_so2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Sulfur dioxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_nh3" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Ammonia emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_no" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Nitric oxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_no2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Nitrogen dioxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_n2o" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Nitrous oxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_ch4" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Methane emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_co" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Carbon monoxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_co2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Carbon dioxide emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_bc" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Black carbon emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_oc" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="Organic carbon emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_pm25" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="PM2.5 emission flux"
+                     packages="chem_musica"/>
+
+                <var name="emi_pm10" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
+                     description="PM10 emission flux"
+                     packages="chem_musica"/>
+#endif
 #endif
 
 #ifdef DO_PHYSICS
