@@ -512,7 +512,10 @@
 #ifdef MPAS_USE_MUSICA
                 <package name="chem_musica"
                          description="MUSICA-enabled chemistry tracers"
-                         active_when="trim(config_micm_file) /= '' .or. trim(config_tuvx_config_file) /= '' .or. trim(config_chem_emission_species) /= ''"/>
+                         active_when="trim(config_micm_file) /= '' .or. trim(config_tuvx_config_file) /= ''"/>
+                <package name="chem_emissions"
+                         description="Chemistry emissions input stream"
+                         active_when="trim(config_chem_emission_species) /= ''"/>
 #endif
         </packages>
 
@@ -1203,8 +1206,7 @@
                         filename_interval="input_interval"
                         input_interval="1:00:00"
                         immutable="true"
-                        packages="chem_musica">
-
+                        packages="chem_emissions">
 			<var_array name="chem_emissions"/>
 		</stream>
 #endif
@@ -1830,7 +1832,7 @@
 
 #ifdef MPAS_USE_MUSICA
                 <var_array name="chem_emissions" type="real" dimensions="nVertLevels nCells Time"
-                     packages="chem_musica">
+                     packages="chem_emissions">
                         <var name="emi_dummy" array_group="chem_emissions" units="kg m^{-2} s^{-1}"
                              description="Placeholder for runtime-selected chemistry emission fields"/>
                 </var_array>

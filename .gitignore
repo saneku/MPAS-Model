@@ -7,7 +7,7 @@ src/framework/*.f90
 src/driver/*.f90
 src/operators/*.f90
 
-output/*
+output
 COMPATIBILITY
 VERSION
 *.png
