@@ -290,7 +290,7 @@ module atm_core
       ! Initialize the chemistry package
       !
 #ifdef DO_CHEMISTRY
-      call chemistry_init(domain % blocklist % configs, domain % blocklist % dimensions)
+      call chemistry_init(domain % blocklist % configs, domain % blocklist % structs, domain % clock)
 #endif
 
    end function atm_core_init
@@ -1038,7 +1038,7 @@ module atm_core
 #endif
 
 #ifdef DO_CHEMISTRY
-      call chemistry_step()
+      call chemistry_step(domain, dt)
 #endif
 
       call atm_timestep(domain, dt, currTime, itimestep, exchange_halo_group)

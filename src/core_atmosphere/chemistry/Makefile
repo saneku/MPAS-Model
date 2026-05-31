@@ -13,6 +13,11 @@ dummy:
 	echo "****** compiling chemistry ******"
 
 OBJS = \
+	mpas_chem_utils.o \
+	mpas_chem_emissions_driver.o \
+	mpas_solar_geometry.o \
+	mpas_tuvx.o \
+	mpas_chem_photolysis_driver.o \
 	mpas_atm_chemistry.o
 
 ifeq ($(MUSICA),true)
@@ -27,6 +32,10 @@ core_chemistry: $(if $(filter true,$(MUSICA)),core_mpas_musica)
 ifeq ($(MUSICA),true)
 	($(MAKE) -C ./musica mpas_musica_lib)
 endif
+
+mpas_chem_emissions_driver.o: mpas_chem_utils.o
+mpas_chem_photolysis_driver.o: mpas_chem_utils.o mpas_solar_geometry.o mpas_tuvx.o
+mpas_atm_chemistry.o: mpas_chem_utils.o mpas_chem_emissions_driver.o mpas_chem_photolysis_driver.o
 
 chem_interface: $(OBJS)
 

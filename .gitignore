@@ -7,6 +7,13 @@ src/framework/*.f90
 src/driver/*.f90
 src/operators/*.f90
 
+output/*
+COMPATIBILITY
+VERSION
+*.png
+PL:*
+rsl.*
+
 # All object files
 *.o
 

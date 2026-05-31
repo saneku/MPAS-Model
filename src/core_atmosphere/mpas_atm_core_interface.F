@@ -495,6 +495,14 @@ module atm_core_interface
          ierr = atm_allocate_scalars(block, cam_pcnst)
       end if
 
+#ifdef MPAS_USE_MUSICA
+      ierr = atm_extend_scalars_for_chemistry(block)
+      if (ierr /= 0) then
+         call mpas_log_write('** Error extending scalars for chemistry', messageType=MPAS_LOG_ERR)
+         return
+      end if
+#endif
+
    end function atm_setup_block
 
 
@@ -630,6 +638,335 @@ module atm_core_interface
       call mpas_pool_add_field(block % allFields, 'scalars_tend', scalarsField)
 
    end function atm_allocate_scalars
+
+
+#ifdef MPAS_USE_MUSICA
+   !-----------------------------------------------------------------------
+   !
+   !  function atm_extend_scalars_for_chemistry
+   !
+   !> \brief   Extend runtime scalar metadata for MICM and passive chemistry tracers
+   !
+   !-----------------------------------------------------------------------
+   function atm_extend_scalars_for_chemistry(block) result(ierr)
+
+      use mpas_atm_chemistry, only : chemistry_query_species
+      use mpas_kind_types,    only : StrKIND
+      use mpas_log,           only : mpas_log_write
+
+      implicit none
+
+      type (block_type), pointer :: block
+      integer :: ierr
+
+      character(len=StrKIND), pointer :: config_micm_file
+      character(len=StrKIND), pointer :: config_chem_emission_species
+      character(len=StrKIND) :: micm_file
+      character(len=StrKIND) :: emission_list
+      integer :: num_chem_species
+      integer :: num_emissions
+      character(len=64), allocatable :: chem_names(:)
+      character(len=64), allocatable :: emission_names(:)
+      integer :: error_code
+      character(len=:), allocatable :: error_message
+
+      type (mpas_pool_type), pointer :: statePool, tendPool, lbcPool
+      type (field3dReal), pointer :: fieldPtr
+      type (field3dReal), dimension(:), pointer :: emissionsField
+
+      integer :: old_count, new_count, t, i, j, timeLevs
+      integer :: err_level
+      integer, pointer :: dimPtr
+
+      ierr = 0
+      micm_file = ''
+      emission_list = ''
+
+      nullify(config_micm_file)
+      nullify(config_chem_emission_species)
+      err_level = mpas_pool_get_error_level()
+      call mpas_pool_set_error_level(MPAS_POOL_SILENT)
+      call mpas_pool_get_config(block % domain % configs, 'config_micm_file', config_micm_file)
+      call mpas_pool_get_config(block % domain % configs, 'config_chem_emission_species', config_chem_emission_species)
+      call mpas_pool_set_error_level(err_level)
+
+      if (associated(config_micm_file)) micm_file = config_micm_file
+      if (associated(config_chem_emission_species)) emission_list = config_chem_emission_species
+
+      call chemistry_query_species(micm_file, emission_list, num_chem_species, chem_names, &
+                                   num_emissions, emission_names, error_code, error_message)
+      if (error_code /= 0) then
+         call mpas_log_write('[Chemistry] Error querying dynamic chemistry species: ' // trim(error_message), &
+                             messageType=MPAS_LOG_ERR)
+         ierr = error_code
+         return
+      end if
+
+      if (num_chem_species == 0 .and. num_emissions == 0) return
+
+      nullify(statePool)
+      call mpas_pool_get_subpool(block % structs, 'state', statePool)
+      if (.not. associated(statePool)) then
+         call mpas_log_write('[Chemistry] No state pool found', messageType=MPAS_LOG_ERR)
+         ierr = 1
+         return
+      end if
+
+      if (num_chem_species > 0) then
+         nullify(fieldPtr)
+         call mpas_pool_get_field(statePool, 'scalars', fieldPtr, 1)
+         if (.not. associated(fieldPtr)) then
+            call mpas_log_write('[Chemistry] No scalars field found in state pool', messageType=MPAS_LOG_ERR)
+            ierr = 1
+            return
+         end if
+
+         old_count = size(fieldPtr % constituentNames)
+         new_count = old_count + num_chem_species
+
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(statePool, 'num_scalars', dimPtr)
+         if (associated(dimPtr)) then
+            dimPtr = new_count
+         else
+            call mpas_pool_add_dimension(statePool, 'num_scalars', new_count)
+         end if
+         call mpas_pool_add_dimension(statePool, 'chem_start', old_count + 1)
+         call mpas_pool_add_dimension(statePool, 'chem_end', new_count)
+
+         do t = 1, 2
+            nullify(fieldPtr)
+            call mpas_pool_get_field(statePool, 'scalars', fieldPtr, t)
+            call extend_field_metadata(fieldPtr, old_count, new_count, num_chem_species, chem_names)
+         end do
+
+         do i = 1, num_chem_species
+            call mpas_pool_add_dimension(statePool, 'index_' // trim(chem_names(i)), old_count + i)
+            call mpas_log_write('[Chemistry] Added dynamic tracer ' // trim(chem_names(i)) // &
+                                ' at scalar index $i', intArgs=[old_count + i])
+         end do
+
+         nullify(tendPool)
+         call mpas_pool_get_subpool(block % structs, 'tend', tendPool)
+         if (.not. associated(tendPool)) then
+            call mpas_log_write('[Chemistry] No tend pool found', messageType=MPAS_LOG_ERR)
+            ierr = 1
+            return
+         end if
+
+         nullify(fieldPtr)
+         call mpas_pool_get_field(tendPool, 'scalars_tend', fieldPtr, 1)
+         if (.not. associated(fieldPtr)) then
+            call mpas_log_write('[Chemistry] No scalars_tend field found', messageType=MPAS_LOG_ERR)
+            ierr = 1
+            return
+         end if
+
+         old_count = size(fieldPtr % constituentNames)
+         new_count = old_count + num_chem_species
+
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(tendPool, 'num_scalars_tend', dimPtr)
+         if (associated(dimPtr)) then
+            dimPtr = new_count
+         else
+            call mpas_pool_add_dimension(tendPool, 'num_scalars_tend', new_count)
+         end if
+
+         call extend_field_metadata(fieldPtr, old_count, new_count, num_chem_species, chem_names, 'tend_')
+         do i = 1, num_chem_species
+            call mpas_pool_add_dimension(tendPool, 'index_' // trim(chem_names(i)), old_count + i)
+         end do
+
+         nullify(lbcPool)
+         call mpas_pool_get_subpool(block % structs, 'lbc', lbcPool)
+         if (associated(lbcPool)) then
+            nullify(fieldPtr)
+            call mpas_pool_get_field(lbcPool, 'lbc_scalars', fieldPtr, 1)
+            if (associated(fieldPtr)) then
+               old_count = size(fieldPtr % constituentNames)
+               new_count = old_count + num_chem_species
+
+               nullify(dimPtr)
+               call mpas_pool_get_dimension(lbcPool, 'num_lbc_scalars', dimPtr)
+               if (associated(dimPtr)) then
+                  dimPtr = new_count
+               else
+                  call mpas_pool_add_dimension(lbcPool, 'num_lbc_scalars', new_count)
+               end if
+
+               do t = 1, 2
+                  nullify(fieldPtr)
+                  call mpas_pool_get_field(lbcPool, 'lbc_scalars', fieldPtr, t)
+                  call extend_field_metadata(fieldPtr, old_count, new_count, num_chem_species, chem_names, 'lbc_')
+               end do
+
+               do i = 1, num_chem_species
+                  call mpas_pool_add_dimension(lbcPool, 'index_' // trim(chem_names(i)), old_count + i)
+               end do
+            end if
+         end if
+      end if
+
+      if (num_emissions > 0) then
+         timeLevs = 2
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(statePool, 'num_chem_emissions', dimPtr)
+         if (associated(dimPtr)) then
+            dimPtr = num_emissions
+         else
+            call mpas_pool_add_dimension(statePool, 'num_chem_emissions', num_emissions)
+         end if
+
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(statePool, 'chem_emissions_start', dimPtr)
+         if (associated(dimPtr)) then
+            dimPtr = 1
+         else
+            call mpas_pool_add_dimension(statePool, 'chem_emissions_start', 1)
+         end if
+
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(statePool, 'chem_emissions_end', dimPtr)
+         if (associated(dimPtr)) then
+            dimPtr = num_emissions
+         else
+            call mpas_pool_add_dimension(statePool, 'chem_emissions_end', num_emissions)
+         end if
+
+         do i = 1, num_emissions
+            call mpas_pool_add_dimension(statePool, 'index_emi_' // trim(emission_names(i)), i)
+         end do
+
+         nullify(fieldPtr)
+         call mpas_pool_get_field(statePool, 'chem_emissions', fieldPtr, 1)
+
+         if (associated(fieldPtr)) then
+            do t = 1, timeLevs
+               nullify(fieldPtr)
+               call mpas_pool_get_field(statePool, 'chem_emissions', fieldPtr, t)
+               call replace_field_metadata(fieldPtr, num_emissions, emission_names, 'emi_')
+               fieldPtr % isActive = .true.
+            end do
+         else
+            allocate(emissionsField(timeLevs))
+
+            do t = 1, timeLevs
+               emissionsField(t) % block => block
+               emissionsField(t) % fieldName = 'chem_emissions'
+               emissionsField(t) % dimNames(1) = 'num_chem_emissions'
+               emissionsField(t) % dimNames(2) = 'nVertLevels'
+               emissionsField(t) % dimNames(3) = 'nCells'
+               emissionsField(t) % defaultValue = 0.0
+               emissionsField(t) % missingValue = -1.0
+               emissionsField(t) % isDecomposed = .true.
+               emissionsField(t) % hasTimeDimension = .true.
+               emissionsField(t) % isActive = .true.
+               emissionsField(t) % isVarArray = .true.
+               emissionsField(t) % isPersistent = .true.
+
+               allocate(emissionsField(t) % constituentNames(num_emissions))
+               do i = 1, num_emissions
+                  emissionsField(t) % constituentNames(i) = 'emi_' // trim(emission_names(i))
+               end do
+
+               allocate(emissionsField(t) % attLists(num_emissions))
+               do j = 1, num_emissions
+                  allocate(emissionsField(t) % attLists(j) % attList)
+               end do
+            end do
+
+            call mpas_pool_add_field(statePool, 'chem_emissions', emissionsField)
+            call mpas_pool_add_field(block % allFields, 'chem_emissions', emissionsField)
+         end if
+
+         call mpas_log_write('[Chemistry] Added dynamic chem_emissions var-array with $i fields', &
+                             intArgs=[num_emissions])
+      end if
+
+      if (allocated(chem_names)) deallocate(chem_names)
+      if (allocated(emission_names)) deallocate(emission_names)
+
+      contains
+
+      subroutine extend_field_metadata(fld, old_n, new_n, n_chem, names, prefix)
+
+         type (field3dReal), pointer, intent(inout) :: fld
+         integer, intent(in) :: old_n, new_n, n_chem
+         character(len=64), intent(in) :: names(:)
+         character(len=*), intent(in), optional :: prefix
+
+         character(len=StrKIND), dimension(:), pointer :: onames, nnames
+         type (att_lists_type), dimension(:), pointer :: oatts, natts
+         integer :: ii, jj
+
+         onames => fld % constituentNames
+         allocate(nnames(new_n))
+         nnames(1:old_n) = onames(1:old_n)
+         do ii = 1, n_chem
+            if (present(prefix)) then
+               nnames(old_n + ii) = trim(prefix) // trim(names(ii))
+            else
+               nnames(old_n + ii) = trim(names(ii))
+            end if
+         end do
+         fld % constituentNames => nnames
+         deallocate(onames)
+
+         oatts => fld % attLists
+         allocate(natts(new_n))
+         do jj = 1, old_n
+            natts(jj) = oatts(jj)
+         end do
+         do jj = old_n + 1, new_n
+            allocate(natts(jj) % attList)
+         end do
+         fld % attLists => natts
+         deallocate(oatts)
+
+      end subroutine extend_field_metadata
+
+      subroutine replace_field_metadata(fld, n_names, names, prefix)
+
+         type (field3dReal), pointer, intent(inout) :: fld
+         integer, intent(in) :: n_names
+         character(len=64), intent(in) :: names(:)
+         character(len=*), intent(in) :: prefix
+
+         character(len=StrKIND), dimension(:), pointer :: old_names, new_names
+         type (att_lists_type), dimension(:), pointer :: old_atts, new_atts
+         integer :: ii
+
+         allocate(new_names(n_names))
+         do ii = 1, n_names
+            new_names(ii) = trim(prefix) // trim(names(ii))
+         end do
+
+         if (associated(fld % constituentNames)) then
+            old_names => fld % constituentNames
+            fld % constituentNames => new_names
+            deallocate(old_names)
+         else
+            fld % constituentNames => new_names
+         end if
+
+         allocate(new_atts(n_names))
+         do ii = 1, n_names
+            allocate(new_atts(ii) % attList)
+         end do
+
+         if (associated(fld % attLists)) then
+            old_atts => fld % attLists
+            fld % attLists => new_atts
+            deallocate(old_atts)
+         else
+            fld % attLists => new_atts
+         end if
+
+      end subroutine replace_field_metadata
+
+   end function atm_extend_scalars_for_chemistry
+#endif
 
 #include "setup_immutable_streams.inc"
 

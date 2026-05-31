@@ -456,6 +456,30 @@
                      units="-"
                      description="MICM configuration file name"
                      possible_values="Any valid filename"/>
+                <nml_option name="config_tuvx_config_file" type="character" default_value=""
+                     units="-"
+                     description="TUV-x configuration file name (empty = disable TUV-x)"
+                     possible_values="Any valid filename"/>
+                <nml_option name="config_tuvx_top_extension" type="logical" default_value="false"
+                     units="-"
+                     description="Extend the TUV-x column above the MPAS domain using a CSV climatology"
+                     possible_values=".true. or .false."/>
+                <nml_option name="config_tuvx_extension_file" type="character" default_value=""
+                     units="-"
+                     description="Path to TUV-x upper-atmosphere climatology CSV"
+                     possible_values="Any valid filename"/>
+                <nml_option name="config_tuvx_update_interval" type="real" default_value="0.0"
+                     units="s"
+                     description="TUV-x update interval in simulated seconds; 0.0 updates every chemistry step"
+                     possible_values="Any non-negative real"/>
+                <nml_option name="config_chem_substeps" type="integer" default_value="1"
+                     units="-"
+                     description="Number of MICM sub-steps per MPAS timestep"
+                     possible_values="Any positive integer"/>
+                <nml_option name="config_chem_emission_species" type="character" default_value=""
+                     units="-"
+                     description="Comma- or space-separated species names expected in chem_emissions files as emi_species"
+                     possible_values="Example: so2,dust_1"/>
         </nml_record>
 #endif
 
@@ -488,7 +512,7 @@
 #ifdef MPAS_USE_MUSICA
                 <package name="chem_musica"
                          description="MUSICA-enabled chemistry tracers"
-                         active_when="trim(config_micm_file) /= ''"/>
+                         active_when="trim(config_micm_file) /= '' .or. trim(config_tuvx_config_file) /= '' .or. trim(config_chem_emission_species) /= ''"/>
 #endif
         </packages>
 
@@ -1181,18 +1205,7 @@
                         immutable="true"
                         packages="chem_musica">
 
-			<var name="emi_so2"/>
-			<var name="emi_nh3"/>
-			<var name="emi_no"/>
-			<var name="emi_no2"/>
-			<var name="emi_n2o"/>
-			<var name="emi_ch4"/>
-			<var name="emi_co"/>
-			<var name="emi_co2"/>
-			<var name="emi_bc"/>
-			<var name="emi_oc"/>
-			<var name="emi_pm25"/>
-			<var name="emi_pm10"/>
+			<var_array name="chem_emissions"/>
 		</stream>
 #endif
 
@@ -1771,117 +1784,7 @@
                         <var name="tke" array_group="turbulence" units="m^2 s^{-2}"
                              description="Turbulent kinetic energy for the prognostic tke LES scheme"
                              packages="les"/>
-#ifdef MPAS_USE_MUSICA
-                        <var name="so2" array_group="chem" units="kg kg^{-1}"
-                             description="Sulfur dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="nh3" array_group="chem" units="kg kg^{-1}"
-                             description="Ammonia mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="no" array_group="chem" units="kg kg^{-1}"
-                             description="Nitric oxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="no2" array_group="chem" units="kg kg^{-1}"
-                             description="Nitrogen dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="n2o" array_group="chem" units="kg kg^{-1}"
-                             description="Nitrous oxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="oh" array_group="chem" units="kg kg^{-1}"
-                             description="Hydroxyl radical mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="o3" array_group="chem" units="kg kg^{-1}"
-                             description="Ozone mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="ch4" array_group="chem" units="kg kg^{-1}"
-                             description="Methane mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="co" array_group="chem" units="kg kg^{-1}"
-                             description="Carbon monoxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="co2" array_group="chem" units="kg kg^{-1}"
-                             description="Carbon dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="bc" array_group="chem" units="kg kg^{-1}"
-                             description="Black carbon aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="oc" array_group="chem" units="kg kg^{-1}"
-                             description="Organic carbon aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="pm25" array_group="chem" units="kg kg^{-1}"
-                             description="PM2.5 aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="pm10" array_group="chem" units="kg kg^{-1}"
-                             description="PM10 aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="dust_1" array_group="chem" units="kg kg^{-1}"
-                             description="Dust type 1 aerosol mixing ratio"
-                             packages="chem_musica"/>
-#endif
                 </var_array>
-#ifdef MPAS_USE_MUSICA
-                <var name="emi_so2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Sulfur dioxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_nh3" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Ammonia emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_no" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Nitric oxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_no2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Nitrogen dioxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_n2o" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Nitrous oxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_ch4" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Methane emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_co" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Carbon monoxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_co2" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Carbon dioxide emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_bc" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Black carbon emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_oc" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="Organic carbon emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_pm25" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="PM2.5 emission flux"
-                     packages="chem_musica"/>
-
-                <var name="emi_pm10" type="real" dimensions="nVertLevels nCells Time" units="kg m^{-2} s^{-1}"
-                     description="PM10 emission flux"
-                     packages="chem_musica"/>
-#endif
 #endif
 
 #ifdef DO_PHYSICS
@@ -1922,6 +1825,14 @@
                         <var name="volc"    array_group="aer_cam" units="kg m^{-3}"
                              description="Volcanic (VOLC) aerosol concentration"/>
 
+                </var_array>
+#endif
+
+#ifdef MPAS_USE_MUSICA
+                <var_array name="chem_emissions" type="real" dimensions="nVertLevels nCells Time"
+                     packages="chem_musica">
+                        <var name="emi_dummy" array_group="chem_emissions" units="kg m^{-2} s^{-1}"
+                             description="Placeholder for runtime-selected chemistry emission fields"/>
                 </var_array>
 #endif
         </var_struct>
@@ -1974,6 +1885,28 @@
 
                 <var name="relhum" type="real" dimensions="nVertLevels nCells Time" units="percent"
                      description="Relative humidity"/>
+
+#ifdef MPAS_USE_MUSICA
+                <var name="j_NO2" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
+                     description="NO2 photolysis rate used by chemistry"
+                     packages="chem_musica"/>
+
+                <var name="j_O2" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
+                     description="O2 photolysis rate used by chemistry"
+                     packages="chem_musica"/>
+
+                <var name="j_O3_O" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
+                     description="O3 photolysis rate for O channel used by chemistry"
+                     packages="chem_musica"/>
+
+                <var name="j_O3_O1D" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
+                     description="O3 photolysis rate for O1D channel used by chemistry"
+                     packages="chem_musica"/>
+
+                <var name="cos_sza" type="real" dimensions="nCells Time" units="unitless"
+                     description="Cosine of solar zenith angle used by chemistry photolysis"
+                     packages="chem_musica"/>
+#endif
 
                 <var name="spechum" type="real" dimensions="nVertLevels nCells Time" units="kg kg^{-1}"
                      description="Specific humidity"
@@ -2248,67 +2181,6 @@
                         <var name="tend_tke" name_in_code="tke" array_group="turbulence" units="kg m^{-3} m^2 s^{-2} s^{-1}" 
                              description="Tendency of tke multiplied by dry air density divided by d(zeta)/dz"
                              packages="les"/>
-#ifdef MPAS_USE_MUSICA
-                        <var name="tend_so2" name_in_code="so2" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of sulfur dioxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_nh3" name_in_code="nh3" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of ammonia mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_no" name_in_code="no" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of nitric oxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_no2" name_in_code="no2" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of nitrogen dioxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_n2o" name_in_code="n2o" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of nitrous oxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_oh" name_in_code="oh" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of hydroxyl radical mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_o3" name_in_code="o3" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of ozone mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_ch4" name_in_code="ch4" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of methane mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_co" name_in_code="co" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of carbon monoxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_co2" name_in_code="co2" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of carbon dioxide mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_bc" name_in_code="bc" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of black carbon aerosol mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_oc" name_in_code="oc" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of organic carbon aerosol mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_pm25" name_in_code="pm25" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of PM2.5 aerosol mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_pm10" name_in_code="pm10" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of PM10 aerosol mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-
-                        <var name="tend_dust_1" name_in_code="dust_1" array_group="chem" units="kg m^{-3} s^{-1}"
-                             description="Tendency of dust type 1 aerosol mass per unit volume divided by d(zeta)/dz"
-                             packages="chem_musica"/>
-#endif
                 </var_array>
 #endif
         </var_struct>
@@ -2392,82 +2264,6 @@
                              units="m^2 s^{-3}"
                              description="Lateral boundary tendency of TKE"
                              packages="les"/>
-#ifdef MPAS_USE_MUSICA
-                        <var name="lbc_so2" name_in_code="so2" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of sulfur dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_nh3" name_in_code="nh3" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of ammonia mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_no" name_in_code="no" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of nitric oxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_no2" name_in_code="no2" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of nitrogen dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_n2o" name_in_code="n2o" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of nitrous oxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_oh" name_in_code="oh" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of hydroxyl radical mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_o3" name_in_code="o3" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of ozone mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_ch4" name_in_code="ch4" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of methane mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_co" name_in_code="co" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of carbon monoxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_co2" name_in_code="co2" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of carbon dioxide mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_bc" name_in_code="bc" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of black carbon aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_oc" name_in_code="oc" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of organic carbon aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_pm25" name_in_code="pm25" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of PM2.5 aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_pm10" name_in_code="pm10" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of PM10 aerosol mixing ratio"
-                             packages="chem_musica"/>
-
-                        <var name="lbc_dust_1" name_in_code="dust_1" array_group="chem"
-                             units="kg kg^{-1} s^{-1}"
-                             description="Lateral boundary tendency of dust type 1 aerosol mixing ratio"
-                             packages="chem_musica"/>
-#endif
                 </var_array>
         </var_struct>
 
