@@ -867,9 +867,9 @@ module mpas_musica
 
         use mpas_log, only : mpas_log_write
 
-        if (.not. musica_is_initialized) return
-
-        call mpas_log_write('Finalizing MUSICA chemistry package...')
+        if (musica_is_initialized) then
+            call mpas_log_write('Finalizing MUSICA chemistry package...')
+        end if
 
         number_of_micm_grid_cells = 0
         n_photo_rp = 0
