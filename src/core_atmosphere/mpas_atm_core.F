@@ -290,7 +290,7 @@ module atm_core
       ! Initialize the chemistry package
       !
 #ifdef DO_CHEMISTRY
-      call chemistry_init(domain % blocklist % configs, domain % blocklist % structs, domain % clock)
+      call chemistry_init(domain)
 #endif
 
    end function atm_core_init

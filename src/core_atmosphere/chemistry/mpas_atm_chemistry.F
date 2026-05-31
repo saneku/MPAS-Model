@@ -33,7 +33,7 @@ contains
     !------------------------------------------------------------------------
     !  routine chemistry_init
     !------------------------------------------------------------------------
-    subroutine chemistry_init(configs, structs, clock)
+    subroutine chemistry_init(domain)
 
 #ifdef MPAS_USE_MUSICA
         use mpas_musica, only: musica_init, resolve_mpas_indices
@@ -41,13 +41,10 @@ contains
         use mpas_chem_photolysis_driver, only: photolysis_init
 #endif
         use mpas_log, only : mpas_log_write
-        use mpas_derived_types, only: mpas_pool_type, MPAS_LOG_CRIT
+        use mpas_derived_types, only: domain_type, block_type, mpas_pool_type, MPAS_LOG_CRIT
         use mpas_pool_routines, only: mpas_pool_get_config, mpas_pool_get_subpool, mpas_pool_get_dimension
-        use mpas_timekeeping, only: MPAS_Clock_type
 
-        type (mpas_pool_type), intent(in) :: configs
-        type (mpas_pool_type), intent(in) :: structs
-        type (MPAS_Clock_type), intent(in) :: clock
+        type (domain_type), intent(in) :: domain
 
 #ifdef MPAS_USE_MUSICA
         character(len=StrKIND), pointer :: filepath_ptr
@@ -59,7 +56,14 @@ contains
         integer                         :: nCells
         integer                         :: nVertLevels
         integer                         :: nChemGridCells
+        integer                         :: blockCells
+        integer                         :: blockVertLevels
+        integer                         :: blockChemGridCells
+        type(block_type), pointer       :: block
+        type(mpas_pool_type), pointer   :: configs
+        type(mpas_pool_type), pointer   :: structs
         type(mpas_pool_type), pointer   :: state
+        type(mpas_pool_type), pointer   :: block_state
         integer, pointer                :: nCells_ptr, nVertLevels_ptr
         integer, pointer                :: int_ptr
 #endif
@@ -67,6 +71,15 @@ contains
         call mpas_log_write('Initializing chemistry packages...')
 
 #ifdef MPAS_USE_MUSICA
+        if (.not. associated(domain % blocklist)) then
+            call mpas_log_write('[Chemistry] No local MPAS blocks are available for chemistry initialization.', &
+                                messageType=MPAS_LOG_CRIT)
+            return
+        end if
+
+        configs => domain % blocklist % configs
+        structs => domain % blocklist % structs
+
         call mpas_pool_get_subpool(structs, 'state', state)
         nullify(nCells_ptr)
         nullify(nVertLevels_ptr)
@@ -94,6 +107,34 @@ contains
         if (associated(emission_list_ptr)) emission_list = emission_list_ptr
 
         if (micm_enabled) then
+            block => domain % blocklist
+            do while (associated(block))
+                call mpas_pool_get_subpool(block % structs, 'state', block_state)
+                nullify(nCells_ptr)
+                nullify(nVertLevels_ptr)
+                call mpas_pool_get_dimension(block_state, 'nCells', nCells_ptr)
+                call mpas_pool_get_dimension(block_state, 'nVertLevels', nVertLevels_ptr)
+                if (.not. associated(nCells_ptr) .or. .not. associated(nVertLevels_ptr)) then
+                    call mpas_log_write('[Chemistry] Could not resolve nCells/nVertLevels in local block $i state pool.', &
+                                        intArgs=[block % localBlockID], messageType=MPAS_LOG_CRIT)
+                    return
+                end if
+
+                blockCells = nCells_ptr
+                blockVertLevels = nVertLevels_ptr
+                blockChemGridCells = blockCells * blockVertLevels
+                if (blockChemGridCells /= nChemGridCells) then
+                    call mpas_log_write('[MUSICA] Local block $i has chemistry grid size $i; expected $i.', &
+                                        intArgs=[block % localBlockID, blockChemGridCells, nChemGridCells], &
+                                        messageType=MPAS_LOG_CRIT)
+                    call mpas_log_write('[MUSICA] Per-block MICM state is required for mixed local block sizes.', &
+                                        messageType=MPAS_LOG_CRIT)
+                    return
+                end if
+
+                block => block % next
+            end do
+
             call musica_init(micm_file, nChemGridCells, error_code, error_message)
             if (error_code /= 0) then
                 call mpas_log_write(error_message, messageType=MPAS_LOG_CRIT)
@@ -119,7 +160,7 @@ contains
         call mpas_pool_get_config(configs, 'config_chem_substeps', int_ptr)
         if (associated(int_ptr)) chem_substeps = max(1, int_ptr)
 
-        call photolysis_init(configs, structs, clock, nVertLevels, micm_enabled, error_code, error_message)
+        call photolysis_init(configs, structs, domain % clock, nVertLevels, micm_enabled, error_code, error_message)
         if (error_code /= 0) then
             call mpas_log_write(error_message, messageType=MPAS_LOG_CRIT)
             return
