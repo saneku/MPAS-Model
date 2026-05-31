@@ -78,6 +78,7 @@ contains
         error_code = 0
         error_message = ''
         use_tuvx = .false.
+        tuvx_update_interval = 0.0_RKIND
         tuvx_time_since_last = huge(1.0_RKIND)
 
 #ifdef MPAS_USE_MUSICA
