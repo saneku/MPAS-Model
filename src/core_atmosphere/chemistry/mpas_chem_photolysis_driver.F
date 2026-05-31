@@ -205,7 +205,7 @@ contains
         use mpas_musica, only: musica_set_photolysis_rates, n_photo_rp
         use mpas_tuvx, only: tuvx_compute_photolysis, tuvx_n_rates
 #endif
-        use mpas_derived_types, only: mpas_pool_type, MPAS_LOG_CRIT
+        use mpas_derived_types, only: mpas_pool_type
         use mpas_log, only : mpas_log_write
         use mpas_pool_routines, only: mpas_pool_get_array, mpas_pool_get_dimension
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
