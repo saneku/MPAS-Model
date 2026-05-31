@@ -164,8 +164,12 @@ contains
         character(len=64) :: lower_emit, lower_tracer
         integer :: i
 
-        target = trim(emission_name)
         lower_emit = to_lower(trim(emission_name))
+        if (is_passive_emission(lower_emit)) then
+            target = trim(emission_name)
+        else
+            target = 'q' // upper_chem_name(trim(emission_name))
+        end if
 
         do i = 1, n_tracers
             lower_tracer = to_lower(trim(tracer_names(i)))
@@ -182,6 +186,48 @@ contains
         end do
 
     end function target_tracer_for_emission
+
+
+    !------------------------------------------------------------------------
+    !  function is_passive_emission
+    !------------------------------------------------------------------------
+    pure logical function is_passive_emission(emission_name)
+
+        character(len=*), intent(in) :: emission_name
+        character(len=len(emission_name)) :: lower_name
+
+        lower_name = to_lower(trim(emission_name))
+
+        is_passive_emission = trim(lower_name) == 'dust_1' .or. &
+                              trim(lower_name) == 'dust1' .or. &
+                              trim(lower_name) == 'bc' .or. &
+                              trim(lower_name) == 'oc' .or. &
+                              trim(lower_name) == 'pm25' .or. &
+                              trim(lower_name) == 'pm2.5' .or. &
+                              trim(lower_name) == 'pm10'
+
+    end function is_passive_emission
+
+
+    !------------------------------------------------------------------------
+    !  function upper_chem_name
+    !------------------------------------------------------------------------
+    pure function upper_chem_name(text) result(out)
+
+        character(len=*), intent(in) :: text
+        character(len=len(text)) :: out
+        integer :: i, ia
+
+        do i = 1, len(text)
+            ia = iachar(text(i:i))
+            if (ia >= iachar('a') .and. ia <= iachar('z')) then
+                out(i:i) = achar(ia - 32)
+            else
+                out(i:i) = text(i:i)
+            end if
+        end do
+
+    end function upper_chem_name
 
 
     !------------------------------------------------------------------------
