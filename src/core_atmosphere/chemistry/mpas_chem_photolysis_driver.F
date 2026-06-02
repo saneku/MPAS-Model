@@ -32,6 +32,8 @@ module mpas_chem_photolysis_driver
     real(kind=RKIND), save :: tuvx_update_interval = 0.0_RKIND
     real(kind=RKIND), save :: tuvx_time_since_last = huge(1.0_RKIND)
     logical, save :: use_tuvx = .false.
+    integer, save :: n_tuvx_daylight_columns_total = 0
+    integer, save :: n_photo_sanitized_total = 0
 
 contains
 
@@ -295,6 +297,7 @@ contains
 
         do iCell = 1, nCells
             cos_sza = solar_cos_sza_safe(DoY, hour_utc, latCell(iCell) * RAD2DEG, lonCell(iCell) * RAD2DEG, days_in_year)
+            if (cos_sza > 0.0_RKIND) n_tuvx_daylight_columns_total = n_tuvx_daylight_columns_total + 1
 
             do k = 1, nVertLevels
                 qv_loc = 0.0_RKIND
@@ -367,6 +370,7 @@ contains
 
         deallocate(rho_air_col, temperature_col, qc_col, qr_col, o3_col, o2_col, n2_col, h2o_col)
         if (n_bad_photo > 0 .or. n_clamped_photo > 0) then
+            n_photo_sanitized_total = n_photo_sanitized_total + n_bad_photo + n_clamped_photo
             call mpas_log_write('[TUV-x] Sanitized photolysis rates: replaced_nonfinite_or_negative=$i clamped_high=$i', &
                                 intArgs=[n_bad_photo, n_clamped_photo])
         end if
@@ -528,11 +532,23 @@ contains
 
 #ifdef MPAS_USE_MUSICA
         use mpas_tuvx, only: tuvx_finalize
+        use mpas_log, only : mpas_log_write
+
+        if (n_tuvx_daylight_columns_total > 0) then
+            call mpas_log_write('[TUV-x] Active daylight columns total: $i', &
+                                intArgs=[n_tuvx_daylight_columns_total])
+        end if
+        if (n_photo_sanitized_total > 0) then
+            call mpas_log_write('[TUV-x] Sanitized photolysis rates total: $i', &
+                                intArgs=[n_photo_sanitized_total])
+        end if
 
         call tuvx_finalize()
 #endif
         use_tuvx = .false.
         tuvx_time_since_last = huge(1.0_RKIND)
+        n_tuvx_daylight_columns_total = 0
+        n_photo_sanitized_total = 0
 
     end subroutine photolysis_finalize
 

@@ -30,6 +30,7 @@ module mpas_chem_emissions_driver
     public :: emissions_finalize
 
     integer, save :: n_emission_species = 0
+    integer, save :: n_emission_species_applied_total = 0
     character(len=64), allocatable, save :: emission_species(:)
     character(len=64), allocatable, save :: emission_tracers(:)
 
@@ -222,16 +223,20 @@ contains
         integer, intent(in) :: nCells
 
         integer :: i_emit
+        integer :: n_applied
 
         if (.not. associated(chem_emissions)) return
 
+        n_applied = 0
         do i_emit = 1, n_emission_species
             if (emission_indices(i_emit) > 0 .and. i_emit <= size(chem_emissions, 1)) then
                 scalars(emission_indices(i_emit),:,1:nCells) = &
                     scalars(emission_indices(i_emit),:,1:nCells) + &
                     dt * chem_emissions(i_emit,:,1:nCells) * inv_aircol(:,:)
+                n_applied = n_applied + 1
             end if
         end do
+        n_emission_species_applied_total = n_emission_species_applied_total + n_applied
 
     end subroutine emissions_apply
 
@@ -262,9 +267,17 @@ contains
     !------------------------------------------------------------------------
     subroutine emissions_finalize()
 
+        use mpas_log, only : mpas_log_write
+
+        if (n_emission_species_applied_total > 0) then
+            call mpas_log_write('[Chemistry] Emission species applied total: $i', &
+                                intArgs=[n_emission_species_applied_total])
+        end if
+
         if (allocated(emission_species)) deallocate(emission_species)
         if (allocated(emission_tracers)) deallocate(emission_tracers)
         n_emission_species = 0
+        n_emission_species_applied_total = 0
 
     end subroutine emissions_finalize
 

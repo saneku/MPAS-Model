@@ -188,6 +188,7 @@ contains
         use mpas_chem_utils, only: resolve_scalar_index, chemistry_days_in_year
 #endif
         use mpas_log, only : mpas_log_write
+        use mpas_timer, only : mpas_timer_start, mpas_timer_stop
         use mpas_derived_types, only: domain_type, block_type, mpas_pool_type, MPAS_LOG_CRIT, MPAS_NOW, MPAS_Time_type
         use mpas_pool_routines, only: mpas_pool_get_subpool, mpas_pool_get_array, mpas_pool_get_dimension, mpas_pool_get_config
         use mpas_timekeeping, only: mpas_get_clock_time, mpas_get_time
@@ -235,6 +236,7 @@ contains
 
         block_ptr => domain % blocklist
         if (.not. associated(block_ptr)) return
+        call mpas_timer_start('chemistry_total')
 
         nullify(filepath_ptr)
         call mpas_pool_get_config(domain % blocklist % configs, 'config_micm_file', filepath_ptr)
@@ -279,6 +281,7 @@ contains
             if (.not. associated(nCells_ptr) .or. .not. associated(nVertLevels_ptr)) then
                 call mpas_log_write('[Chemistry] Could not resolve nCells/nVertLevels in mesh pool.', &
                                     messageType=MPAS_LOG_CRIT)
+                call mpas_timer_stop('chemistry_total')
                 return
             end if
             nCells_local = nCells_ptr
@@ -305,7 +308,9 @@ contains
             if (micm_enabled_local) idx_h2o_val = musica_mpas_index_for_species('H2O')
             if (idx_h2o_val <= 0) idx_h2o_val = resolve_scalar_index(state, 'h2o')
 
+            call mpas_timer_start('chemistry_emissions')
             call emissions_prepare(state, scalars, chem_emissions, emission_indices, apply_emissions)
+            call mpas_timer_stop('chemistry_emissions')
 
             if (micm_enabled_local .or. apply_emissions) then
                 allocate(inv_aircol(nVertLevels_local, nCells_local))
@@ -355,23 +360,30 @@ contains
             end do
 
             if (apply_emissions) then
+                call mpas_timer_start('chemistry_emissions')
                 call emissions_apply(scalars, chem_emissions, inv_aircol, emission_indices, dt, nCells_local)
+                call mpas_timer_stop('chemistry_emissions')
             end if
 
+            call mpas_timer_start('chemistry_photolysis')
             call photolysis_step(state, mesh, diag, scalars, rho, qv_chem, temperature_chem, &
                                  theta_m, exner, zgrid, nCells_local, nVertLevels_local, idx_qv_val, &
                                  idx_o3_val, idx_o2_val, idx_n2_val, idx_h2o_val, DoY, &
                                  hour_utc, days_in_year, update_photolysis, micm_enabled_local, &
                                  error_code, error_message)
             if (error_code /= 0) then
+                call mpas_timer_stop('chemistry_photolysis')
                 if (allocated(inv_aircol)) deallocate(inv_aircol)
                 if (allocated(emission_indices)) deallocate(emission_indices)
                 deallocate(rho, temperature_chem, pressure_chem, qv_chem)
                 call mpas_log_write(error_message, messageType=MPAS_LOG_CRIT)
+                call mpas_timer_stop('chemistry_total')
                 return
             end if
+            call mpas_timer_stop('chemistry_photolysis')
 
             if (micm_enabled_local) then
+                call mpas_timer_start('chemistry_micm')
                 sub_dt = dt / real(chem_substeps, RKIND)
                 do i_sub = 1, chem_substeps
                     call musica_step( &
@@ -383,13 +395,16 @@ contains
                     )
 
                     if (error_code /= 0) then
+                        call mpas_timer_stop('chemistry_micm')
                         if (allocated(inv_aircol)) deallocate(inv_aircol)
                         if (allocated(emission_indices)) deallocate(emission_indices)
                         deallocate(rho, temperature_chem, pressure_chem, qv_chem)
                         call mpas_log_write(error_message, messageType=MPAS_LOG_CRIT)
+                        call mpas_timer_stop('chemistry_total')
                         return
                     end if
                 end do
+                call mpas_timer_stop('chemistry_micm')
             end if
 
             if (allocated(inv_aircol)) deallocate(inv_aircol)
@@ -400,6 +415,7 @@ contains
         end do
 
         call photolysis_advance_time(dt, update_photolysis)
+        call mpas_timer_stop('chemistry_total')
 #endif
 
     end subroutine chemistry_step

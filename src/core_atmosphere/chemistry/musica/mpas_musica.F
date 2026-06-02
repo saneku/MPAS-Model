@@ -56,6 +56,7 @@ module mpas_musica
     integer, save :: n_photo_rp = 0
     integer, allocatable :: photo_rp_indices(:)
     character(len=64), allocatable :: photo_rp_names(:)
+    integer, save :: n_micm_stall_retries_total = 0
 
     real(kind=real64), parameter :: mw_air_kg_per_mol = 28.9647e-3_real64
     real(kind=real64), parameter :: mw_o2_kg_per_mol = 31.998e-3_real64
@@ -354,6 +355,7 @@ module mpas_musica
 
         use mpas_kind_types, only : RKIND
         use mpas_log, only : mpas_log_write
+        use mpas_timer, only : mpas_timer_start, mpas_timer_stop
         use musica_util, only : error_t, string_t
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
@@ -415,6 +417,8 @@ module mpas_musica
             error_message = 'MUSICA step failed: MPAS (nVertLevels*nCells) does not match MICM grid size.'
             return
         end if
+
+        call mpas_timer_start('chem_mpas_to_micm')
 
         call sanitize_mmr_tracers(scalars, nVertLevels, nCells)
 
@@ -490,9 +494,13 @@ module mpas_musica
                                 intArgs=[n_bad_conc, n_bad_rate])
         end if
 
+        call mpas_timer_stop('chem_mpas_to_micm')
+
         elapsed = 0.0_real64
         sub_call = 0
         min_attempt_dt = max(1.0e-12_real64, 1.0e-6_real64 * real(time_step, kind=real64))
+
+        call mpas_timer_start('chem_micm_solve')
 
         do while (elapsed < real(time_step, kind=real64) .and. sub_call < MAX_SUB_CALLS)
             remaining = real(time_step, kind=real64) - elapsed
@@ -502,18 +510,23 @@ module mpas_musica
             do
                 sub_call = sub_call + 1
                 call micm%solve(attempt_dt, state, solver_state, solver_stats, error)
-                if (has_error_occurred(error, error_message, error_code)) return
+                if (has_error_occurred(error, error_message, error_code)) then
+                    call mpas_timer_stop('chem_micm_solve')
+                    return
+                end if
 
                 advanced = solver_stats%final_time()
                 if (ieee_is_finite(advanced) .and. advanced > 0.0_real64) exit
 
                 call sanitize_micm_state(state, n_bad_conc, n_bad_rate)
                 stall_retry = stall_retry + 1
+                n_micm_stall_retries_total = n_micm_stall_retries_total + 1
 
                 if (stall_retry > MAX_STALL_RETRIES .or. attempt_dt <= min_attempt_dt) then
                     error_code = 1
                     error_message = '[MUSICA] MICM stalled at sub-step; solver state: ' // &
                                     solver_state%get_char_array()
+                    call mpas_timer_stop('chem_micm_solve')
                     return
                 end if
 
@@ -528,11 +541,15 @@ module mpas_musica
             elapsed = elapsed + advanced
         end do
 
+        call mpas_timer_stop('chem_micm_solve')
+
         if (elapsed < real(time_step, kind=real64)) then
             error_code = 1
             error_message = '[MUSICA] MICM sub-step budget exhausted.'
             return
         end if
+
+        call mpas_timer_start('chem_micm_to_mpas')
 
         do iCell = 1, nCells
             do k = 1, nVertLevels
@@ -553,6 +570,8 @@ module mpas_musica
                 end do
             end do
         end do
+
+        call mpas_timer_stop('chem_micm_to_mpas')
 
     end subroutine musica_step
 
@@ -870,10 +889,15 @@ module mpas_musica
         if (musica_is_initialized) then
             call mpas_log_write('Finalizing MUSICA chemistry package...')
         end if
+        if (n_micm_stall_retries_total > 0) then
+            call mpas_log_write('[MUSICA] MICM stall retries total: $i', &
+                                intArgs=[n_micm_stall_retries_total])
+        end if
 
         number_of_micm_grid_cells = 0
         n_photo_rp = 0
         n_chem_species = 0
+        n_micm_stall_retries_total = 0
         if (allocated(photo_rp_names)) deallocate(photo_rp_names)
         if (allocated(photo_rp_indices)) deallocate(photo_rp_indices)
         if (allocated(chem_species)) deallocate(chem_species)

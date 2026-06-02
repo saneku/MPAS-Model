@@ -399,6 +399,7 @@ contains
 
 #ifdef MPAS_USE_MUSICA
         use mpas_log, only: mpas_log_write
+        use mpas_timer, only : mpas_timer_start, mpas_timer_stop
 #endif
 
         real(kind=RKIND), intent(in)  :: cos_sza
@@ -441,6 +442,7 @@ contains
             photo_rates_out(1:n_photo_rates, 1:n_mpas_layers) = 0.0_RKIND
             return
         end if
+
 
         ! ---- Build the composite column (MPAS below + climatology above) ----
 
@@ -534,17 +536,27 @@ contains
 
         ! Update from-host height grid
         call height_grid%set_edges(z_km, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call height_grid%set_midpoints(z_mid_km, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         ! Update from-host profiles
         call air_profile%set_midpoint_values(air_nd, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call air_profile%set_edge_values(air_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call air_profile%set_layer_densities(air_ld, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         ! Populate the "exo" layer density above the top of the grid so
         ! spherical-geometry slant-path air mass accounts for air above
@@ -554,40 +566,70 @@ contains
         ! lower-thermosphere around the extension top (T about 195 K gives
         ! H = R T / (M_air g) about 5.7 km; rounded up).
         call air_profile%calculate_exo_layer_density(7.0_dk, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         call temp_profile%set_midpoint_values(temp_mid, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call temp_profile%set_edge_values(temp_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         call o3_profile%set_midpoint_values(o3_nd, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call o3_profile%set_edge_values(o3_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call o3_profile%set_layer_densities(o3_ld, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         call o2_profile%set_midpoint_values(o2_nd, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call o2_profile%set_edge_values(o2_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call o2_profile%set_layer_densities(o2_ld, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         call n2_profile%set_midpoint_values(n2_nd, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call n2_profile%set_edge_values(n2_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call n2_profile%set_layer_densities(n2_ld, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         call h2o_profile%set_midpoint_values(h2o_nd, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call h2o_profile%set_edge_values(h2o_edges, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call h2o_profile%set_layer_densities(h2o_ld, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         ! Compute cloud optical depth per layer and update cloud radiator.
         ! Clouds only live in the MPAS slice; extension rows of cloud_od were
@@ -601,19 +643,31 @@ contains
         end do
 
         call cloud_radiator%set_optical_depths(cloud_od, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call cloud_radiator%set_single_scattering_albedos(cloud_ssa, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
         call cloud_radiator%set_asymmetry_factors(cloud_g, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            return
+        end if
 
         ! SZA in radians; earth-sun distance ~1 AU
         sza_rad = acos(cos_sza_clamped)
         esd = 1.0_dk
 
+
         ! Run TUV-x
+        call mpas_timer_start('chem_tuvx_solver_run')
         call tuvx_solver%run(sza_rad, esd, photo_rates, heating_rates, err)
-        if (tuvx_has_error(err, error_code, error_message)) return
+        if (tuvx_has_error(err, error_code, error_message)) then
+            call mpas_timer_stop('chem_tuvx_solver_run')
+            return
+        end if
+        call mpas_timer_stop('chem_tuvx_solver_run')
 
         ! Extract every cached photolysis rate on the MPAS slice; extension-
         ! layer values are computed by TUV-x but discarded (the host has no
