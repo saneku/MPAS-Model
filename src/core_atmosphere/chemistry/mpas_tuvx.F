@@ -43,6 +43,7 @@ module mpas_tuvx
     private
 
     public :: tuvx_init, tuvx_compute_photolysis, tuvx_is_enabled, tuvx_finalize
+    public :: tuvx_query_rate_names
     public :: tuvx_n_rates, tuvx_rate_names
 
 #ifdef MPAS_USE_MUSICA
@@ -119,8 +120,8 @@ contains
     !> \details
     !>  Creates height grid and atmospheric profiles (air, temperature, O3, O2, N2, H2O)
     !>  as from-host objects, registers them, constructs the TUV-x solver,
-    !>  then retrieves updatable handles. Looks up the j_NO2 reaction index
-    !>  and allocates persistent work arrays.
+    !>  then retrieves updatable handles. Caches all configured photolysis
+    !>  reaction names and allocates persistent work arrays.
     !------------------------------------------------------------------------
     subroutine tuvx_init(config_file, nVertLevels_in, enable_extension, &
                          extension_file, error_code, error_message)
@@ -330,6 +331,57 @@ contains
 #endif
 
     end subroutine tuvx_init
+
+
+    !------------------------------------------------------------------------
+    !  subroutine tuvx_query_rate_names
+    !
+    !> \brief Discover TUV-x photolysis rate names from a config file
+    !> \details
+    !>  Initializes a temporary TUV-x solver, copies the discovered photolysis
+    !>  names, then releases the solver. This is used during MPAS block setup
+    !>  so output streams can request mechanism-specific rate names.
+    !------------------------------------------------------------------------
+    subroutine tuvx_query_rate_names(config_file, nVertLevels_in, enable_extension, &
+                                    extension_file, n_rates, names, error_code, error_message)
+
+        character(len=*), intent(in)                :: config_file
+        integer, intent(in)                         :: nVertLevels_in
+        logical, intent(in)                         :: enable_extension
+        character(len=*), intent(in)                :: extension_file
+        integer, intent(out)                        :: n_rates
+        character(len=64), allocatable, intent(out) :: names(:)
+        integer, intent(out)                        :: error_code
+        character(len=:), allocatable, intent(out)  :: error_message
+
+        error_code = 0
+        error_message = ''
+        n_rates = 0
+
+#ifdef MPAS_USE_MUSICA
+        if (len_trim(config_file) == 0) then
+            allocate(names(0))
+            return
+        end if
+
+        call tuvx_init(config_file, nVertLevels_in, enable_extension, extension_file, &
+                       error_code, error_message)
+        if (error_code /= 0) then
+            allocate(names(0))
+            call tuvx_finalize()
+            return
+        end if
+
+        n_rates = tuvx_n_rates()
+        allocate(names(max(1, n_rates)))
+        if (n_rates > 0) call tuvx_rate_names(names)
+
+        call tuvx_finalize()
+#else
+        allocate(names(0))
+#endif
+
+    end subroutine tuvx_query_rate_names
 
 
     !------------------------------------------------------------------------
@@ -679,6 +731,13 @@ contains
         nullify(n2_profile)
         nullify(h2o_profile)
         nullify(cloud_radiator)
+
+        n_photo_rates = 0
+        n_heating_rates = 0
+        n_wavelength_bins = 0
+        n_mpas_layers = 0
+        n_ext_layers = 0
+        n_total_layers = 0
 
         call mpas_log_write('[TUV-x] Finalized.')
 #endif

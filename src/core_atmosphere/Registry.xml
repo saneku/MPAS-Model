@@ -1893,22 +1893,6 @@
                      description="Relative humidity"/>
 
 #ifdef MPAS_USE_MUSICA
-                <var name="j_NO2" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-                     description="NO2 photolysis rate used by chemistry"
-                     packages="chem_musica"/>
-
-                <var name="j_O2" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-                     description="O2 photolysis rate used by chemistry"
-                     packages="chem_musica"/>
-
-                <var name="j_O3_O" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-                     description="O3 photolysis rate for O channel used by chemistry"
-                     packages="chem_musica"/>
-
-                <var name="j_O3_O1D" type="real" dimensions="nVertLevels nCells Time" units="s^{-1}"
-                     description="O3 photolysis rate for O1D channel used by chemistry"
-                     packages="chem_musica"/>
-
                 <var name="cos_sza" type="real" dimensions="nCells Time" units="unitless"
                      description="Cosine of solar zenith angle used by chemistry photolysis"
                      packages="chem_musica"/>

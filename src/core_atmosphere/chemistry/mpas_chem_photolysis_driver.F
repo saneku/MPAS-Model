@@ -100,10 +100,6 @@ contains
             if (associated(nCells_ptr)) nCells = nCells_ptr
         end if
 
-        if (associated(diag)) then
-            call zero_photolysis_diag(diag, ['j_NO2    ', 'j_O2     ', 'j_O3_O   ', 'j_O3_O1D '])
-        end if
-
         currTime = mpas_get_clock_time(clock, MPAS_NOW, ierr)
         call mpas_get_time(currTime, DoY=DoY, H=hour, M=minute, S=second)
         days_in_year = chemistry_days_in_year(configs, currTime)
@@ -383,7 +379,7 @@ contains
             end if
         end if
 
-        call set_photolysis_diag(diag, photo_rates, nCells, nVertLevels, micm_mode)
+        call set_photolysis_diag(diag, photo_rates, nCells, nVertLevels)
         deallocate(photo_rates)
 #endif
 
@@ -459,12 +455,8 @@ contains
     !------------------------------------------------------------------------
     !  routine set_photolysis_diag
     !------------------------------------------------------------------------
-    subroutine set_photolysis_diag(diag, photo_rates, nCells, nVertLevels, micm_mode)
+    subroutine set_photolysis_diag(diag, photo_rates, nCells, nVertLevels)
 
-#ifdef MPAS_USE_MUSICA
-        use mpas_musica, only: photo_rp_names, n_photo_rp
-        use mpas_tuvx, only: tuvx_n_rates, tuvx_rate_names
-#endif
         use mpas_derived_types, only: mpas_pool_type, MPAS_LOG_CRIT
         use mpas_log, only : mpas_log_write
         use mpas_pool_routines, only: mpas_pool_get_array
@@ -473,146 +465,31 @@ contains
         real(kind=RKIND), intent(in) :: photo_rates(:,:,:)
         integer, intent(in) :: nCells
         integer, intent(in) :: nVertLevels
-        logical, intent(in) :: micm_mode
 
 #ifdef MPAS_USE_MUSICA
-        real(kind=RKIND), dimension(:,:), pointer :: diag_field
-        integer :: ir, iCell, k, n_rates_diag
-        character(len=64), allocatable :: rate_names_diag(:)
-        character(len=64) :: rp_name
-        integer :: idx_jno2, idx_jo2_a, idx_jo2_b, idx_jo3_a, idx_jo3_b
-        character(len=256) :: missing_rates
+        real(kind=RKIND), dimension(:,:,:), pointer :: diag_rates
+        integer :: ir, iCell, k
 
         if (.not. associated(diag)) return
 
-        if (micm_mode) then
-            n_rates_diag = n_photo_rp
-            if (n_rates_diag <= 0) return
-            allocate(rate_names_diag(n_rates_diag))
-            rate_names_diag(:) = photo_rp_names(1:n_rates_diag)
-        else
-            n_rates_diag = tuvx_n_rates()
-            if (n_rates_diag <= 0) return
-            allocate(rate_names_diag(n_rates_diag))
-            call tuvx_rate_names(rate_names_diag)
-        end if
-
-        do ir = 1, min(n_rates_diag, size(photo_rates, 1))
-            nullify(diag_field)
-            call mpas_pool_get_array(diag, 'j_' // trim(rate_names_diag(ir)), diag_field)
-            if (.not. associated(diag_field)) cycle
-
-            do iCell = 1, min(nCells, size(diag_field, 2))
-                do k = 1, min(nVertLevels, size(diag_field, 1))
-                    diag_field(k, iCell) = photo_rates(ir, k, iCell)
-                end do
-            end do
-        end do
-
-        idx_jno2 = 0
-        idx_jo2_a = 0
-        idx_jo2_b = 0
-        idx_jo3_a = 0
-        idx_jo3_b = 0
-
-        do ir = 1, min(n_rates_diag, size(photo_rates, 1))
-            rp_name = trim(rate_names_diag(ir))
-            select case (rp_name)
-            case ('jno2', 'JNO2')
-                idx_jno2 = ir
-            case ('jo2_a', 'JO2_A')
-                idx_jo2_a = ir
-            case ('jo2_b', 'JO2_B')
-                idx_jo2_b = ir
-            case ('jo3_a', 'JO3_A')
-                idx_jo3_a = ir
-            case ('jo3_b', 'JO3_B')
-                idx_jo3_b = ir
-            end select
-        end do
-
-        missing_rates = ''
-        if (idx_jno2 == 0) missing_rates = trim(missing_rates) // ' jno2'
-        if (idx_jo2_a == 0) missing_rates = trim(missing_rates) // ' jo2_a'
-        if (idx_jo2_b == 0) missing_rates = trim(missing_rates) // ' jo2_b'
-        if (idx_jo3_a == 0) missing_rates = trim(missing_rates) // ' jo3_a'
-        if (idx_jo3_b == 0) missing_rates = trim(missing_rates) // ' jo3_b'
-        if (len_trim(missing_rates) > 0) then
-            call mpas_log_write('[TUV-x] Missing required photolysis rate(s) for diagnostics:' // trim(missing_rates), &
+        nullify(diag_rates)
+        call mpas_pool_get_array(diag, 'photolysis_rates', diag_rates)
+        if (.not. associated(diag_rates)) then
+            call mpas_log_write('[TUV-x] photolysis_rates diagnostic var-array is unavailable.', &
                                 messageType=MPAS_LOG_CRIT)
-            deallocate(rate_names_diag)
             return
         end if
 
-        nullify(diag_field)
-        call mpas_pool_get_array(diag, 'j_NO2', diag_field)
-        if (associated(diag_field)) then
-            do iCell = 1, min(nCells, size(diag_field, 2))
-                do k = 1, min(nVertLevels, size(diag_field, 1))
-                    diag_field(k, iCell) = photo_rates(idx_jno2, k, iCell)
+        do ir = 1, min(size(diag_rates, 1), size(photo_rates, 1))
+            do k = 1, min(nVertLevels, size(diag_rates, 2), size(photo_rates, 2))
+                do iCell = 1, min(nCells, size(diag_rates, 3), size(photo_rates, 3))
+                    diag_rates(ir, k, iCell) = photo_rates(ir, k, iCell)
                 end do
             end do
-        end if
-
-        nullify(diag_field)
-        call mpas_pool_get_array(diag, 'j_O2', diag_field)
-        if (associated(diag_field)) then
-            do iCell = 1, min(nCells, size(diag_field, 2))
-                do k = 1, min(nVertLevels, size(diag_field, 1))
-                    diag_field(k, iCell) = photo_rates(idx_jo2_a, k, iCell) + photo_rates(idx_jo2_b, k, iCell)
-                end do
-            end do
-        end if
-
-        nullify(diag_field)
-        call mpas_pool_get_array(diag, 'j_O3_O', diag_field)
-        if (associated(diag_field)) then
-            do iCell = 1, min(nCells, size(diag_field, 2))
-                do k = 1, min(nVertLevels, size(diag_field, 1))
-                    diag_field(k, iCell) = photo_rates(idx_jo3_a, k, iCell)
-                end do
-            end do
-        end if
-
-        nullify(diag_field)
-        call mpas_pool_get_array(diag, 'j_O3_O1D', diag_field)
-        if (associated(diag_field)) then
-            do iCell = 1, min(nCells, size(diag_field, 2))
-                do k = 1, min(nVertLevels, size(diag_field, 1))
-                    diag_field(k, iCell) = photo_rates(idx_jo3_b, k, iCell)
-                end do
-            end do
-        end if
-
-        deallocate(rate_names_diag)
+        end do
 #endif
 
     end subroutine set_photolysis_diag
-
-
-    !------------------------------------------------------------------------
-    !  routine zero_photolysis_diag
-    !------------------------------------------------------------------------
-    subroutine zero_photolysis_diag(diag, names)
-
-        use mpas_derived_types, only: mpas_pool_type
-        use mpas_pool_routines, only: mpas_pool_get_array
-
-        type(mpas_pool_type), intent(inout), pointer :: diag
-        character(len=*), intent(in) :: names(:)
-
-        real(kind=RKIND), dimension(:,:), pointer :: diag_field
-        integer :: i
-
-        if (.not. associated(diag)) return
-
-        do i = 1, size(names)
-            nullify(diag_field)
-            call mpas_pool_get_array(diag, trim(names(i)), diag_field)
-            if (associated(diag_field)) diag_field = 0.0_RKIND
-        end do
-
-    end subroutine zero_photolysis_diag
 
 
     !------------------------------------------------------------------------

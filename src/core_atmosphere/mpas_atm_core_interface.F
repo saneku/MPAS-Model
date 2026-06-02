@@ -651,6 +651,7 @@ module atm_core_interface
    function atm_extend_scalars_for_chemistry(block) result(ierr)
 
       use mpas_atm_chemistry, only : chemistry_query_species
+      use mpas_tuvx,          only : tuvx_query_rate_names
       use mpas_kind_types,    only : StrKIND
       use mpas_log,           only : mpas_log_write
 
@@ -662,42 +663,71 @@ module atm_core_interface
       character(len=StrKIND), pointer :: config_micm_file
       character(len=StrKIND), pointer :: config_chem_emission_species
       character(len=StrKIND), pointer :: config_chem_additional_species
+      character(len=StrKIND), pointer :: config_tuvx_config_file
+      character(len=StrKIND), pointer :: config_tuvx_extension_file
+      logical, pointer :: config_tuvx_top_extension
       character(len=StrKIND) :: micm_file
       character(len=StrKIND) :: emission_list
       character(len=StrKIND) :: additional_list
+      character(len=StrKIND) :: tuvx_file
+      character(len=StrKIND) :: tuvx_extension_file
+      logical :: tuvx_top_extension
       integer :: num_chem_species
       integer :: num_emissions
+      integer :: num_photolysis_rates
       character(len=64), allocatable :: chem_names(:)
       character(len=64), allocatable :: emission_names(:)
+      character(len=64), allocatable :: photolysis_names(:)
+      character(len=64), allocatable, save :: cached_photolysis_names(:)
       integer :: error_code
       character(len=:), allocatable :: error_message
 
-      type (mpas_pool_type), pointer :: statePool, tendPool, lbcPool
+      type (mpas_pool_type), pointer :: statePool, tendPool, lbcPool, diagPool
       type (field3dReal), pointer :: fieldPtr
       type (field3dReal), dimension(:), pointer :: emissionsField
+      type (field3dReal), dimension(:), pointer :: photolysisField
 
       integer :: old_count, new_count, t, i, j, timeLevs
+      integer :: nVertLevels
+      integer :: query_nVertLevels
+      integer, save :: cached_num_photolysis_rates = 0
       integer :: err_level
       integer, pointer :: dimPtr
+      logical, save :: photolysis_query_done = .false.
 
       ierr = 0
       micm_file = ''
       emission_list = ''
       additional_list = ''
+      tuvx_file = ''
+      tuvx_extension_file = ''
+      tuvx_top_extension = .false.
+      nVertLevels = 0
 
       nullify(config_micm_file)
       nullify(config_chem_emission_species)
       nullify(config_chem_additional_species)
+      nullify(config_tuvx_config_file)
+      nullify(config_tuvx_extension_file)
+      nullify(config_tuvx_top_extension)
       err_level = mpas_pool_get_error_level()
       call mpas_pool_set_error_level(MPAS_POOL_SILENT)
       call mpas_pool_get_config(block % domain % configs, 'config_micm_file', config_micm_file)
       call mpas_pool_get_config(block % domain % configs, 'config_chem_emission_species', config_chem_emission_species)
       call mpas_pool_get_config(block % domain % configs, 'config_chem_additional_species', config_chem_additional_species)
+      call mpas_pool_get_config(block % domain % configs, 'config_tuvx_config_file', config_tuvx_config_file)
+      call mpas_pool_get_config(block % domain % configs, 'config_tuvx_extension_file', config_tuvx_extension_file)
+      call mpas_pool_get_config(block % domain % configs, 'config_tuvx_top_extension', config_tuvx_top_extension)
       call mpas_pool_set_error_level(err_level)
 
       if (associated(config_micm_file)) micm_file = config_micm_file
       if (associated(config_chem_emission_species)) emission_list = config_chem_emission_species
       if (associated(config_chem_additional_species)) additional_list = config_chem_additional_species
+      if (associated(config_tuvx_config_file)) tuvx_file = config_tuvx_config_file
+      if (associated(config_tuvx_extension_file)) tuvx_extension_file = config_tuvx_extension_file
+      if (associated(config_tuvx_top_extension)) tuvx_top_extension = config_tuvx_top_extension
+
+      query_nVertLevels = 1
 
       call chemistry_query_species(micm_file, emission_list, additional_list, num_chem_species, chem_names, &
                                    num_emissions, emission_names, error_code, error_message)
@@ -708,7 +738,7 @@ module atm_core_interface
          return
       end if
 
-      if (num_chem_species == 0 .and. num_emissions == 0) return
+      if (num_chem_species == 0 .and. num_emissions == 0 .and. len_trim(tuvx_file) == 0) return
 
       nullify(statePool)
       call mpas_pool_get_subpool(block % structs, 'state', statePool)
@@ -717,6 +747,16 @@ module atm_core_interface
          ierr = 1
          return
       end if
+
+      nullify(dimPtr)
+      call mpas_pool_get_dimension(statePool, 'nVertLevels', dimPtr)
+      if (associated(dimPtr)) nVertLevels = dimPtr
+      if (nVertLevels <= 0) then
+         nullify(dimPtr)
+         call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', dimPtr)
+         if (associated(dimPtr)) nVertLevels = dimPtr
+      end if
+      if (nVertLevels > 0) query_nVertLevels = nVertLevels
 
       if (num_chem_species > 0) then
          nullify(fieldPtr)
@@ -890,8 +930,101 @@ module atm_core_interface
                              intArgs=[num_emissions])
       end if
 
+      if (len_trim(tuvx_file) > 0) then
+         if (.not. photolysis_query_done) then
+            call tuvx_query_rate_names(tuvx_file, query_nVertLevels, tuvx_top_extension, tuvx_extension_file, &
+                                       cached_num_photolysis_rates, cached_photolysis_names, error_code, error_message)
+            if (error_code /= 0) then
+               call mpas_log_write('[Chemistry] Error querying dynamic photolysis rates: ' // trim(error_message), &
+                                   messageType=MPAS_LOG_ERR)
+               ierr = error_code
+               return
+            end if
+            photolysis_query_done = .true.
+         end if
+
+         num_photolysis_rates = cached_num_photolysis_rates
+         allocate(photolysis_names(max(1, num_photolysis_rates)))
+         if (num_photolysis_rates > 0) photolysis_names(1:num_photolysis_rates) = &
+            cached_photolysis_names(1:num_photolysis_rates)
+
+         if (num_photolysis_rates > 0) then
+            nullify(diagPool)
+            call mpas_pool_get_subpool(block % structs, 'diag', diagPool)
+            if (.not. associated(diagPool)) then
+               call mpas_log_write('[Chemistry] No diag pool found for dynamic photolysis diagnostics', &
+                                   messageType=MPAS_LOG_ERR)
+               ierr = 1
+               return
+            end if
+
+            nullify(dimPtr)
+            call mpas_pool_get_dimension(diagPool, 'num_photolysis_rates', dimPtr)
+            if (associated(dimPtr)) then
+               dimPtr = num_photolysis_rates
+            else
+               call mpas_pool_add_dimension(diagPool, 'num_photolysis_rates', num_photolysis_rates)
+            end if
+
+            do i = 1, num_photolysis_rates
+               call mpas_pool_add_dimension(diagPool, 'index_' // trim(photolysis_names(i)), i)
+            end do
+
+            nullify(fieldPtr)
+            call mpas_pool_get_field(diagPool, 'photolysis_rates', fieldPtr, 1)
+
+            if (associated(fieldPtr)) then
+               call replace_field_metadata(fieldPtr, num_photolysis_rates, photolysis_names, '')
+               do j = 1, num_photolysis_rates
+                  call mpas_add_att(fieldPtr % attLists(j) % attList, 'units', 's^{-1}')
+                  call mpas_add_att(fieldPtr % attLists(j) % attList, 'description', &
+                                    trim(photolysis_names(j)) // ' photolysis rate from TUV-x')
+               end do
+               fieldPtr % isActive = .true.
+            else
+               timeLevs = 1
+               allocate(photolysisField(timeLevs))
+
+               do t = 1, timeLevs
+                  photolysisField(t) % block => block
+                  photolysisField(t) % fieldName = 'photolysis_rates'
+                  photolysisField(t) % dimNames(1) = 'num_photolysis_rates'
+                  photolysisField(t) % dimNames(2) = 'nVertLevels'
+                  photolysisField(t) % dimNames(3) = 'nCells'
+                  photolysisField(t) % defaultValue = 0.0
+                  photolysisField(t) % missingValue = -1.0
+                  photolysisField(t) % isDecomposed = .true.
+                  photolysisField(t) % hasTimeDimension = .true.
+                  photolysisField(t) % isActive = .true.
+                  photolysisField(t) % isVarArray = .true.
+                  photolysisField(t) % isPersistent = .true.
+
+                  allocate(photolysisField(t) % constituentNames(num_photolysis_rates))
+                  do i = 1, num_photolysis_rates
+                     photolysisField(t) % constituentNames(i) = trim(photolysis_names(i))
+                  end do
+
+                  allocate(photolysisField(t) % attLists(num_photolysis_rates))
+                  do j = 1, num_photolysis_rates
+                     allocate(photolysisField(t) % attLists(j) % attList)
+                     call mpas_add_att(photolysisField(t) % attLists(j) % attList, 'units', 's^{-1}')
+                     call mpas_add_att(photolysisField(t) % attLists(j) % attList, 'description', &
+                                       trim(photolysis_names(j)) // ' photolysis rate from TUV-x')
+                  end do
+               end do
+
+               call mpas_pool_add_field(diagPool, 'photolysis_rates', photolysisField)
+               call mpas_pool_add_field(block % allFields, 'photolysis_rates', photolysisField)
+            end if
+
+            call mpas_log_write('[Chemistry] Added dynamic photolysis_rates var-array with $i fields', &
+                                intArgs=[num_photolysis_rates])
+         end if
+      end if
+
       if (allocated(chem_names)) deallocate(chem_names)
       if (allocated(emission_names)) deallocate(emission_names)
+      if (allocated(photolysis_names)) deallocate(photolysis_names)
 
       contains
 
