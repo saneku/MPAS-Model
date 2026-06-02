@@ -661,8 +661,10 @@ module atm_core_interface
 
       character(len=StrKIND), pointer :: config_micm_file
       character(len=StrKIND), pointer :: config_chem_emission_species
+      character(len=StrKIND), pointer :: config_chem_additional_species
       character(len=StrKIND) :: micm_file
       character(len=StrKIND) :: emission_list
+      character(len=StrKIND) :: additional_list
       integer :: num_chem_species
       integer :: num_emissions
       character(len=64), allocatable :: chem_names(:)
@@ -681,19 +683,23 @@ module atm_core_interface
       ierr = 0
       micm_file = ''
       emission_list = ''
+      additional_list = ''
 
       nullify(config_micm_file)
       nullify(config_chem_emission_species)
+      nullify(config_chem_additional_species)
       err_level = mpas_pool_get_error_level()
       call mpas_pool_set_error_level(MPAS_POOL_SILENT)
       call mpas_pool_get_config(block % domain % configs, 'config_micm_file', config_micm_file)
       call mpas_pool_get_config(block % domain % configs, 'config_chem_emission_species', config_chem_emission_species)
+      call mpas_pool_get_config(block % domain % configs, 'config_chem_additional_species', config_chem_additional_species)
       call mpas_pool_set_error_level(err_level)
 
       if (associated(config_micm_file)) micm_file = config_micm_file
       if (associated(config_chem_emission_species)) emission_list = config_chem_emission_species
+      if (associated(config_chem_additional_species)) additional_list = config_chem_additional_species
 
-      call chemistry_query_species(micm_file, emission_list, num_chem_species, chem_names, &
+      call chemistry_query_species(micm_file, emission_list, additional_list, num_chem_species, chem_names, &
                                    num_emissions, emission_names, error_code, error_message)
       if (error_code /= 0) then
          call mpas_log_write('[Chemistry] Error querying dynamic chemistry species: ' // trim(error_message), &

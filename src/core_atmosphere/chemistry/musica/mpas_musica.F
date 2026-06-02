@@ -145,7 +145,7 @@ module mpas_musica
                     molar_mass_val = background_molar_mass(sp_lower)
                 else
                     chem_species(i_species)%micm_name = sp_name
-                    chem_species(i_species)%mpas_name = 'q' // sp_name
+                    chem_species(i_species)%mpas_name = trim(to_lower(sp_name))
                     chem_species(i_species)%micm_index = spec_idx
                     chem_species(i_species)%mpas_index = 0
                     chem_species(i_species)%molar_mass = 0.0_real64
@@ -160,7 +160,7 @@ module mpas_musica
             end if
 
             chem_species(i_species)%micm_name = sp_name
-            chem_species(i_species)%mpas_name = 'q' // sp_name
+            chem_species(i_species)%mpas_name = trim(to_lower(sp_name))
             chem_species(i_species)%micm_index = spec_idx
             chem_species(i_species)%mpas_index = 0
             chem_species(i_species)%molar_mass = molar_mass_val
@@ -261,7 +261,7 @@ module mpas_musica
             end if
 
             num_species = num_species + 1
-            species_names(num_species) = 'q' // trim(sp_name)
+            species_names(num_species) = trim(to_lower(sp_name))
             call mpas_log_write('[MUSICA] Discovered chemistry tracer: ' // trim(species_names(num_species)))
         end do
 

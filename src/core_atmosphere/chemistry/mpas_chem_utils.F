@@ -168,7 +168,7 @@ contains
         if (is_passive_emission(lower_emit)) then
             target = trim(emission_name)
         else
-            target = 'q' // upper_chem_name(trim(emission_name))
+            target = trim(lower_emit)
         end if
 
         do i = 1, n_tracers

@@ -49,8 +49,10 @@ contains
 #ifdef MPAS_USE_MUSICA
         character(len=StrKIND), pointer :: filepath_ptr
         character(len=StrKIND), pointer :: emission_list_ptr
+        character(len=StrKIND), pointer :: additional_list_ptr
         character(len=StrKIND)          :: micm_file
         character(len=StrKIND)          :: emission_list
+        character(len=StrKIND)          :: additional_list
         integer                         :: error_code
         character(len=:), allocatable   :: error_message
         integer                         :: nCells
@@ -105,6 +107,10 @@ contains
         call mpas_pool_get_config(configs, 'config_chem_emission_species', emission_list_ptr)
         emission_list = ''
         if (associated(emission_list_ptr)) emission_list = emission_list_ptr
+        nullify(additional_list_ptr)
+        call mpas_pool_get_config(configs, 'config_chem_additional_species', additional_list_ptr)
+        additional_list = ''
+        if (associated(additional_list_ptr)) additional_list = additional_list_ptr
 
         if (micm_enabled) then
             block => domain % blocklist
@@ -150,7 +156,7 @@ contains
             call mpas_log_write('[Chemistry] MICM disabled (config_micm_file is empty).')
         end if
 
-        call emissions_init(micm_file, emission_list, error_code, error_message)
+        call emissions_init(micm_file, emission_list, additional_list, error_code, error_message)
         if (error_code /= 0) then
             call mpas_log_write(error_message, messageType=MPAS_LOG_CRIT)
             return
@@ -285,24 +291,19 @@ contains
 
             idx_o3_val = -1
             if (micm_enabled_local) idx_o3_val = musica_mpas_index_for_species('O3')
-            if (idx_o3_val <= 0) idx_o3_val = resolve_scalar_index(state, 'qO3')
-            if (idx_o3_val <= 0) idx_o3_val = resolve_scalar_index(state, 'qo3')
             if (idx_o3_val <= 0) idx_o3_val = resolve_scalar_index(state, 'o3')
 
             idx_o2_val = -1
             if (micm_enabled_local) idx_o2_val = musica_mpas_index_for_species('O2')
-            if (idx_o2_val <= 0) idx_o2_val = resolve_scalar_index(state, 'qO2')
-            if (idx_o2_val <= 0) idx_o2_val = resolve_scalar_index(state, 'qo2')
+            if (idx_o2_val <= 0) idx_o2_val = resolve_scalar_index(state, 'o2')
 
             idx_n2_val = -1
             if (micm_enabled_local) idx_n2_val = musica_mpas_index_for_species('N2')
-            if (idx_n2_val <= 0) idx_n2_val = resolve_scalar_index(state, 'qN2')
-            if (idx_n2_val <= 0) idx_n2_val = resolve_scalar_index(state, 'qn2')
+            if (idx_n2_val <= 0) idx_n2_val = resolve_scalar_index(state, 'n2')
 
             idx_h2o_val = -1
             if (micm_enabled_local) idx_h2o_val = musica_mpas_index_for_species('H2O')
-            if (idx_h2o_val <= 0) idx_h2o_val = resolve_scalar_index(state, 'qH2O')
-            if (idx_h2o_val <= 0) idx_h2o_val = resolve_scalar_index(state, 'qh2o')
+            if (idx_h2o_val <= 0) idx_h2o_val = resolve_scalar_index(state, 'h2o')
 
             call emissions_prepare(state, scalars, chem_emissions, emission_indices, apply_emissions)
 
@@ -407,7 +408,7 @@ contains
     !------------------------------------------------------------------------
     !  routine chemistry_query_species
     !------------------------------------------------------------------------
-    subroutine chemistry_query_species(config_micm_file, config_emission_species, &
+    subroutine chemistry_query_species(config_micm_file, config_emission_species, config_additional_species, &
                                        num_species, species_names, &
                                        num_emissions, emission_names, &
                                        error_code, error_message)
@@ -416,6 +417,7 @@ contains
 
         character(len=*), intent(in)                 :: config_micm_file
         character(len=*), intent(in)                 :: config_emission_species
+        character(len=*), intent(in)                 :: config_additional_species
         integer, intent(out)                         :: num_species
         character(len=64), allocatable, intent(out)  :: species_names(:)
         integer, intent(out)                         :: num_emissions
@@ -423,7 +425,7 @@ contains
         integer, intent(out)                         :: error_code
         character(len=:), allocatable, intent(out)   :: error_message
 
-        call emissions_query_species(config_micm_file, config_emission_species, &
+        call emissions_query_species(config_micm_file, config_emission_species, config_additional_species, &
                                      num_species, species_names, num_emissions, emission_names, &
                                      error_code, error_message)
 

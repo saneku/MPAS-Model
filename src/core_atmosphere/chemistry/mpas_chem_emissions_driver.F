@@ -38,7 +38,7 @@ contains
     !------------------------------------------------------------------------
     !  routine emissions_query_species
     !------------------------------------------------------------------------
-    subroutine emissions_query_species(config_micm_file, config_emission_species, &
+    subroutine emissions_query_species(config_micm_file, config_emission_species, config_additional_species, &
                                        num_species, species_names, &
                                        num_emissions, emission_names, &
                                        error_code, error_message)
@@ -51,6 +51,7 @@ contains
 
         character(len=*), intent(in)                 :: config_micm_file
         character(len=*), intent(in)                 :: config_emission_species
+        character(len=*), intent(in)                 :: config_additional_species
         integer, intent(out)                         :: num_species
         character(len=64), allocatable, intent(out)  :: species_names(:)
         integer, intent(out)                         :: num_emissions
@@ -59,9 +60,10 @@ contains
         character(len=:), allocatable, intent(out)   :: error_message
 
         character(len=64), allocatable :: micm_names(:)
+        character(len=64), allocatable :: additional_names(:)
         character(len=64), allocatable :: work_names(:)
         character(len=64) :: target_name
-        integer :: n_micm, i, max_names
+        integer :: n_micm, n_additional, i, max_names
 
         error_code = 0
         error_message = ''
@@ -77,8 +79,9 @@ contains
         end if
 
         call parse_species_list(config_emission_species, num_emissions, emission_names)
+        call parse_species_list(config_additional_species, n_additional, additional_names)
 
-        max_names = n_micm + num_emissions
+        max_names = n_micm + num_emissions + n_additional
         allocate(work_names(max(1, max_names)))
 
         do i = 1, n_micm
@@ -89,6 +92,9 @@ contains
             target_name = target_tracer_for_emission(emission_names(i), micm_names, n_micm)
             call append_unique(work_names, num_species, trim(target_name))
         end do
+        do i = 1, n_additional
+            call append_unique(work_names, num_species, trim(additional_names(i)))
+        end do
 
         allocate(species_names(num_species))
         if (num_species > 0) species_names(:) = work_names(1:num_species)
@@ -98,6 +104,7 @@ contains
         end if
 
         if (allocated(micm_names)) deallocate(micm_names)
+        if (allocated(additional_names)) deallocate(additional_names)
         if (allocated(work_names)) deallocate(work_names)
 #else
         allocate(species_names(0))
@@ -110,13 +117,14 @@ contains
     !------------------------------------------------------------------------
     !  routine emissions_init
     !------------------------------------------------------------------------
-    subroutine emissions_init(config_micm_file, config_emission_species, error_code, error_message)
+    subroutine emissions_init(config_micm_file, config_emission_species, config_additional_species, error_code, error_message)
 
         use mpas_chem_utils, only: target_tracer_for_emission
         use mpas_log, only : mpas_log_write
 
         character(len=*), intent(in)                :: config_micm_file
         character(len=*), intent(in)                :: config_emission_species
+        character(len=*), intent(in)                :: config_additional_species
         integer, intent(out)                        :: error_code
         character(len=:), allocatable, intent(out)  :: error_message
 
@@ -129,7 +137,7 @@ contains
 
         call emissions_finalize()
 
-        call emissions_query_species(config_micm_file, config_emission_species, &
+        call emissions_query_species(config_micm_file, config_emission_species, config_additional_species, &
                                      n_tracers, tracer_names, n_emission_species, local_emission_names, &
                                      error_code, error_message)
         if (error_code /= 0) return

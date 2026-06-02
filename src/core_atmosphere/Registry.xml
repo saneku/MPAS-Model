@@ -480,6 +480,10 @@
                      units="-"
                      description="Comma- or space-separated species names expected in chem_emissions files as emi_species"
                      possible_values="Example: so2,dust_1"/>
+                <nml_option name="config_chem_additional_species" type="character" default_value=""
+                     units="-"
+                     description="Comma- or space-separated passive chemistry species to allocate in addition to MICM and emissions"
+                     possible_values="Example: dust_2,sulf"/>
         </nml_record>
 #endif
 
