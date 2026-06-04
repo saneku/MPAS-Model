@@ -308,9 +308,7 @@ contains
             if (micm_enabled_local) idx_h2o_val = musica_mpas_index_for_species('H2O')
             if (idx_h2o_val <= 0) idx_h2o_val = resolve_scalar_index(state, 'h2o')
 
-            call mpas_timer_start('chemistry_emissions')
             call emissions_prepare(state, scalars, chem_emissions, emission_indices, apply_emissions)
-            call mpas_timer_stop('chemistry_emissions')
 
             if (micm_enabled_local .or. apply_emissions) then
                 allocate(inv_aircol(nVertLevels_local, nCells_local))

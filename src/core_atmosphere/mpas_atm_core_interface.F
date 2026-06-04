@@ -651,7 +651,7 @@ module atm_core_interface
    function atm_extend_scalars_for_chemistry(block) result(ierr)
 
       use mpas_atm_chemistry, only : chemistry_query_species
-      use mpas_tuvx,          only : tuvx_query_rate_names
+      use mpas_chem_photolysis_tuvx,          only : tuvx_query_rate_names
       use mpas_kind_types,    only : StrKIND
       use mpas_log,           only : mpas_log_write
 

@@ -1,5 +1,5 @@
 !-----------------------------------------------------------------------
-!  mpas_solar_geometry
+!  mpas_chem_solar_geometry
 !
 !> \brief Computes solar geometry needed by MPAS chemistry
 !> \details
@@ -9,7 +9,7 @@
 !>  hour-angle relations, including the Spencer (1971) declination formula,
 !>  and return negative values when the sun is below the local horizon.
 !-----------------------------------------------------------------------
-module mpas_solar_geometry
+module mpas_chem_solar_geometry
 
     use mpas_kind_types, only : RKIND
 
@@ -77,4 +77,4 @@ contains
 
     end function solar_cos_sza
 
-end module mpas_solar_geometry
+end module mpas_chem_solar_geometry

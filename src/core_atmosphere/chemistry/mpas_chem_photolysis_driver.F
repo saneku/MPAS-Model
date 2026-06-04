@@ -44,7 +44,7 @@ contains
 
 #ifdef MPAS_USE_MUSICA
         use mpas_musica, only: musica_cache_photo_indices
-        use mpas_tuvx, only: tuvx_init, tuvx_is_enabled, tuvx_n_rates, tuvx_rate_names
+        use mpas_chem_photolysis_tuvx, only: tuvx_init, tuvx_is_enabled, tuvx_n_rates, tuvx_rate_names
 #endif
         use mpas_chem_utils, only: chemistry_days_in_year
         use mpas_derived_types, only: mpas_pool_type, MPAS_LOG_CRIT, MPAS_NOW, MPAS_Time_type
@@ -201,7 +201,7 @@ contains
 
 #ifdef MPAS_USE_MUSICA
         use mpas_musica, only: musica_set_photolysis_rates, n_photo_rp
-        use mpas_tuvx, only: tuvx_compute_photolysis, tuvx_n_rates
+        use mpas_chem_photolysis_tuvx, only: tuvx_compute_photolysis, tuvx_n_rates
 #endif
         use mpas_derived_types, only: mpas_pool_type
         use mpas_log, only : mpas_log_write
@@ -437,7 +437,7 @@ contains
     !------------------------------------------------------------------------
     real(kind=RKIND) function solar_cos_sza_safe(DoY, hour_utc, lat_deg, lon_deg, days_in_year) result(cos_sza)
 
-        use mpas_solar_geometry, only: solar_cos_sza
+        use mpas_chem_solar_geometry, only: solar_cos_sza
         use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
         integer, intent(in) :: DoY
@@ -531,7 +531,7 @@ contains
     subroutine photolysis_finalize()
 
 #ifdef MPAS_USE_MUSICA
-        use mpas_tuvx, only: tuvx_finalize
+        use mpas_chem_photolysis_tuvx, only: tuvx_finalize
         use mpas_log, only : mpas_log_write
 
         if (n_tuvx_daylight_columns_total > 0) then

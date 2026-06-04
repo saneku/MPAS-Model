@@ -7,16 +7,12 @@
 !-----------------------------------------------------------------------
 !  mpas_musica
 !
-!> \brief Manages interactions with the MUSICA chemistry package
-!> \author CheMPAS-A Developers
-!> \date   20 August 2025
+!> \brief MPAS-Chem backend for MUSICA/MICM chemistry
 !> \details
-!>  MPAS wrapper around MUSICA/MICM. It initializes MICM from the selected
-!>  mechanism file, discovers mechanism species at runtime, maps MPAS
-!>  q<SPECIES> tracers to MICM species, converts between MPAS mass mixing
-!>  ratios and MICM concentrations, injects photolysis rate parameters,
-!>  advances the MICM solver, and copies updated chemistry back to MPAS
-!>  scalars.
+!>  Uses the public MUSICA/MICM Fortran API to initialize a mechanism,
+!>  discover runtime species and rate parameters, exchange MPAS mass
+!>  mixing-ratio tracers with MICM concentrations, apply photolysis rate
+!>  parameters, solve chemistry, and copy updated fields back to MPAS.
 !--------------------------------------------------------------------------
 module mpas_musica
 
@@ -77,25 +73,17 @@ module mpas_musica
         use musica_util, only : error_t, string_t
         use mpas_kind_types, only : RKIND
         use mpas_log, only : mpas_log_write
+        use musica_util, only : error_t
+        use musica_util, only : error_t
 
         character(len=*),              intent(in)    :: filename_of_micm_configuration
         integer,                       intent(in)    :: number_of_grid_cells
         integer,                       intent(out)   :: error_code
         character(len=:), allocatable, intent(out)   :: error_message
 
-        character(len=*), parameter :: MOLAR_MASS_PROPERTY = "molecular weight [kg mol-1]"
-        character(len=*), parameter :: MOLAR_MASS_FALLBACK_PROPERTY = "__molar mass"
         type(error_t)  :: error
-        type(error_t)  :: fallback_error
         type(string_t) :: micm_version
         integer :: solver_type = RosenbrockStandardOrder
-        integer :: i_species, spec_idx
-        real(kind=real64) :: molar_mass_val
-        character(len=:), allocatable :: sp_name
-        character(len=64) :: sp_lower
-        character(len=4096) :: skipped_zero_weight_names
-        integer :: n_skipped_zero_weight
-        logical :: is_background_species
 
         error_code = 0
         error_message = ''
@@ -121,66 +109,8 @@ module mpas_musica
         number_of_micm_grid_cells = number_of_grid_cells
         call initialize_rate_parameters_defaults(state)
 
-        n_chem_species = state%species_ordering%size()
-        if (allocated(chem_species)) deallocate(chem_species)
-        allocate(chem_species(n_chem_species))
-        skipped_zero_weight_names = ''
-        n_skipped_zero_weight = 0
-
-        do i_species = 1, n_chem_species
-            sp_name = trim(state%species_ordering%name(i_species))
-            sp_lower = to_lower(trim(sp_name))
-            is_background_species = is_background_micm_species(sp_lower)
-
-            spec_idx = state%species_ordering%index(sp_name, error)
-            if (has_error_occurred(error, error_message, error_code)) return
-
-            molar_mass_val = micm%get_species_property_double(sp_name, MOLAR_MASS_PROPERTY, error)
-            if (.not. error%is_success()) then
-                molar_mass_val = micm%get_species_property_double(sp_name, MOLAR_MASS_FALLBACK_PROPERTY, fallback_error)
-                error = fallback_error
-                if (has_error_occurred(error, error_message, error_code)) return
-            end if
-            if (molar_mass_val <= 0.0_real64) then
-                if (is_background_species) then
-                    molar_mass_val = background_molar_mass(sp_lower)
-                else
-                    chem_species(i_species)%micm_name = sp_name
-                    chem_species(i_species)%mpas_name = trim(to_lower(sp_name))
-                    chem_species(i_species)%micm_index = spec_idx
-                    chem_species(i_species)%mpas_index = 0
-                    chem_species(i_species)%molar_mass = 0.0_real64
-                    chem_species(i_species)%maps_to_mpas = .false.
-                    chem_species(i_species)%is_o2 = .false.
-                    chem_species(i_species)%is_n2 = .false.
-                    chem_species(i_species)%is_h2o = .false.
-                    n_skipped_zero_weight = n_skipped_zero_weight + 1
-                    call append_name_to_string(skipped_zero_weight_names, sp_name)
-                    cycle
-                end if
-            end if
-
-            chem_species(i_species)%micm_name = sp_name
-            chem_species(i_species)%mpas_name = trim(to_lower(sp_name))
-            chem_species(i_species)%micm_index = spec_idx
-            chem_species(i_species)%mpas_index = 0
-            chem_species(i_species)%molar_mass = molar_mass_val
-            chem_species(i_species)%maps_to_mpas = .true.
-            chem_species(i_species)%is_o2 = trim(sp_lower) == 'o2'
-            chem_species(i_species)%is_n2 = trim(sp_lower) == 'n2'
-            chem_species(i_species)%is_h2o = trim(sp_lower) == 'h2o'
-
-            call mpas_log_write('[MUSICA] MICM species: ' // trim(sp_name) // &
-                ' -> ' // trim(chem_species(i_species)%mpas_name) // &
-                ' molar_mass=$r kg/mol', realArgs=[real(molar_mass_val, kind=RKIND)])
-        end do
-
-        if (n_skipped_zero_weight > 0) then
-            call mpas_log_write('[MUSICA] Skipped MPAS mapping for zero-weight MICM species: $i', &
-                                intArgs=[n_skipped_zero_weight])
-            call mpas_log_write('[MUSICA] Zero-weight MICM species not mapped to MPAS: ' // &
-                                trim(skipped_zero_weight_names))
-        end if
+        call build_species_table(micm, state, .true., error_code, error_message)
+        if (error_code /= 0) return
 
         call mpas_log_write('MICM rate parameters: $i (storage size=$i)', &
                             intArgs=[state%number_of_rate_parameters, size(state%rate_parameters)])
@@ -208,11 +138,8 @@ module mpas_musica
         type(micm_t), pointer  :: tmp_micm => null()
         type(state_t), pointer :: tmp_state => null()
         type(error_t)          :: error
-        type(error_t)          :: fallback_error
         integer                :: i
         integer                :: n_total
-        character(len=*), parameter :: MOLAR_MASS_PROPERTY = "molecular weight [kg mol-1]"
-        character(len=*), parameter :: MOLAR_MASS_FALLBACK_PROPERTY = "__molar mass"
         real(kind=real64)      :: molar_mass_val
         character(len=:), allocatable :: sp_name
         character(len=64)      :: sp_lower
@@ -244,12 +171,8 @@ module mpas_musica
             sp_name = trim(tmp_state%species_ordering%name(i))
             sp_lower = to_lower(trim(sp_name))
             is_background_species = is_background_micm_species(sp_lower)
-            molar_mass_val = tmp_micm%get_species_property_double(sp_name, MOLAR_MASS_PROPERTY, error)
-            if (.not. error%is_success()) then
-                molar_mass_val = tmp_micm%get_species_property_double(sp_name, MOLAR_MASS_FALLBACK_PROPERTY, fallback_error)
-                error = fallback_error
-                if (has_error_occurred(error, error_message, error_code)) goto 100
-            end if
+            call get_species_molar_mass(tmp_micm, sp_name, molar_mass_val, error_code, error_message)
+            if (error_code /= 0) goto 100
 
             if (molar_mass_val <= 0.0_real64) then
                 if (is_background_species) then
@@ -278,6 +201,140 @@ module mpas_musica
         if (associated(tmp_micm)) deallocate(tmp_micm)
 
     end subroutine musica_query_species
+
+    !------------------------------------------------------------------------
+    !  subroutine build_species_table
+    !
+    !> \brief Discover MICM species and build MPAS-Chem mapping metadata.
+    !------------------------------------------------------------------------
+    subroutine build_species_table(micm_in, state_in, log_species, error_code, error_message)
+
+        use mpas_kind_types, only : RKIND
+        use mpas_log, only : mpas_log_write
+        use musica_util, only : error_t
+
+        type(micm_t), pointer, intent(inout) :: micm_in
+        type(state_t), pointer, intent(inout) :: state_in
+        logical, intent(in) :: log_species
+        integer, intent(out) :: error_code
+        character(len=:), allocatable, intent(out) :: error_message
+
+        type(error_t) :: error
+        integer :: i_species, spec_idx
+        real(kind=real64) :: molar_mass_val
+        character(len=:), allocatable :: sp_name
+        character(len=64) :: sp_lower
+        character(len=4096) :: skipped_zero_weight_names
+        integer :: n_skipped_zero_weight
+        logical :: is_background_species
+
+        error_code = 0
+        error_message = ''
+        skipped_zero_weight_names = ''
+        n_skipped_zero_weight = 0
+
+        n_chem_species = state_in%species_ordering%size()
+        if (allocated(chem_species)) deallocate(chem_species)
+        allocate(chem_species(n_chem_species))
+
+        do i_species = 1, n_chem_species
+            sp_name = trim(state_in%species_ordering%name(i_species))
+            sp_lower = to_lower(trim(sp_name))
+            is_background_species = is_background_micm_species(sp_lower)
+
+            spec_idx = state_in%species_ordering%index(sp_name, error)
+            if (has_error_occurred(error, error_message, error_code)) return
+
+            call get_species_molar_mass(micm_in, sp_name, molar_mass_val, error_code, error_message)
+            if (error_code /= 0) return
+
+            if (molar_mass_val <= 0.0_real64) then
+                if (is_background_species) then
+                    molar_mass_val = background_molar_mass(sp_lower)
+                else
+                    call set_species_entry(i_species, sp_name, spec_idx, 0.0_real64, .false.)
+                    n_skipped_zero_weight = n_skipped_zero_weight + 1
+                    call append_name_to_string(skipped_zero_weight_names, sp_name)
+                    cycle
+                end if
+            end if
+
+            call set_species_entry(i_species, sp_name, spec_idx, molar_mass_val, .true.)
+            if (log_species) then
+                call mpas_log_write('[MUSICA] MICM species: ' // trim(sp_name) // &
+                    ' -> ' // trim(chem_species(i_species)%mpas_name) // &
+                    ' molar_mass=$r kg/mol', realArgs=[real(molar_mass_val, kind=RKIND)])
+            end if
+        end do
+
+        if (n_skipped_zero_weight > 0) then
+            call mpas_log_write('[MUSICA] Skipped MPAS mapping for zero-weight MICM species: $i', &
+                                intArgs=[n_skipped_zero_weight])
+            call mpas_log_write('[MUSICA] Zero-weight MICM species not mapped to MPAS: ' // &
+                                trim(skipped_zero_weight_names))
+        end if
+
+    end subroutine build_species_table
+
+    !------------------------------------------------------------------------
+    !  subroutine set_species_entry
+    !
+    !> \brief Fill one MPAS-Chem species table entry.
+    !------------------------------------------------------------------------
+    subroutine set_species_entry(i_species, micm_name, micm_index, molar_mass, maps_to_mpas)
+
+        integer, intent(in) :: i_species
+        character(len=*), intent(in) :: micm_name
+        integer, intent(in) :: micm_index
+        real(kind=real64), intent(in) :: molar_mass
+        logical, intent(in) :: maps_to_mpas
+
+        character(len=64) :: lower_name
+
+        lower_name = to_lower(trim(micm_name))
+        chem_species(i_species)%micm_name = trim(micm_name)
+        chem_species(i_species)%mpas_name = trim(lower_name)
+        chem_species(i_species)%micm_index = micm_index
+        chem_species(i_species)%mpas_index = 0
+        chem_species(i_species)%molar_mass = molar_mass
+        chem_species(i_species)%maps_to_mpas = maps_to_mpas
+        chem_species(i_species)%is_o2 = trim(lower_name) == 'o2'
+        chem_species(i_species)%is_n2 = trim(lower_name) == 'n2'
+        chem_species(i_species)%is_h2o = trim(lower_name) == 'h2o'
+
+    end subroutine set_species_entry
+
+    !------------------------------------------------------------------------
+    !  subroutine get_species_molar_mass
+    !
+    !> \brief Query molar mass from public MICM species properties.
+    !------------------------------------------------------------------------
+    subroutine get_species_molar_mass(micm_in, species_name, molar_mass, error_code, error_message)
+
+        use musica_util, only : error_t
+
+        type(micm_t), pointer, intent(inout) :: micm_in
+        character(len=*), intent(in) :: species_name
+        real(kind=real64), intent(out) :: molar_mass
+        integer, intent(out) :: error_code
+        character(len=:), allocatable, intent(out) :: error_message
+
+        character(len=*), parameter :: MOLAR_MASS_PROPERTY = "molecular weight [kg mol-1]"
+        character(len=*), parameter :: MOLAR_MASS_FALLBACK_PROPERTY = "__molar mass"
+        type(error_t) :: error
+        type(error_t) :: fallback_error
+
+        error_code = 0
+        error_message = ''
+
+        molar_mass = micm_in%get_species_property_double(species_name, MOLAR_MASS_PROPERTY, error)
+        if (.not. error%is_success()) then
+            molar_mass = micm_in%get_species_property_double(species_name, MOLAR_MASS_FALLBACK_PROPERTY, fallback_error)
+            error = fallback_error
+            if (has_error_occurred(error, error_message, error_code)) return
+        end if
+
+    end subroutine get_species_molar_mass
 
     !------------------------------------------------------------------------
     !  subroutine resolve_mpas_indices
@@ -354,10 +411,7 @@ module mpas_musica
             error_code, error_message)
 
         use mpas_kind_types, only : RKIND
-        use mpas_log, only : mpas_log_write
         use mpas_timer, only : mpas_timer_start, mpas_timer_stop
-        use musica_util, only : error_t, string_t
-        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
 
         real(kind=RKIND), dimension(:,:,:), intent(inout) :: scalars
         real(kind=RKIND), dimension(:,:), intent(in)      :: qv_mmr
@@ -369,25 +423,7 @@ module mpas_musica
         integer,                         intent(out)      :: error_code
         character(len=:), allocatable,   intent(out)      :: error_message
 
-        type(error_t)        :: error
-        type(string_t)       :: solver_state
-        type(solver_stats_t) :: solver_stats
         integer              :: nVertLevels, nCells
-        integer              :: iCell, k, iGrid, iConc, i_sp
-        real(kind=real64)    :: rho_air, t_air, p_air, air_mol, q_mmr, qv_air
-        real(kind=real64)    :: elapsed, remaining, advanced
-        real(kind=real64)    :: attempt_dt, min_attempt_dt
-        integer              :: sub_call
-        integer, parameter   :: MAX_SUB_CALLS = 100
-        integer, parameter   :: MAX_STALL_RETRIES = 20
-        integer              :: stall_retry
-        integer              :: n_bad_conc, n_bad_rate
-        integer              :: cell_stride, var_stride
-        real(kind=real64), parameter :: rho_air_floor = 1.0e-12_real64
-        real(kind=real64), parameter :: t_air_min = 150.0_real64
-        real(kind=real64), parameter :: t_air_max = 350.0_real64
-        real(kind=real64), parameter :: p_air_min = 100.0_real64
-        real(kind=real64), parameter :: p_air_max = 200000.0_real64
 
         error_code = 0
         error_message = ''
@@ -397,180 +433,21 @@ module mpas_musica
         nVertLevels = size(qv_mmr, 1)
         nCells = size(qv_mmr, 2)
 
-        if (size(scalars, 2) < nVertLevels .or. size(scalars, 3) < nCells) then
-            error_code = 1
-            error_message = 'MUSICA step failed: scalars dimensions do not match chemistry grid.'
-            return
-        end if
-
-        if (size(rho_zz, 1) /= nVertLevels .or. size(rho_zz, 2) /= nCells .or. &
-            size(zz, 1) /= nVertLevels .or. size(zz, 2) /= nCells .or. &
-            size(temperature, 1) /= nVertLevels .or. size(temperature, 2) /= nCells .or. &
-            size(pressure, 1) /= nVertLevels .or. size(pressure, 2) /= nCells) then
-            error_code = 1
-            error_message = 'MUSICA step failed: environment dimensions do not match chemistry grid.'
-            return
-        end if
-
-        if (nVertLevels * nCells /= number_of_micm_grid_cells) then
-            error_code = 1
-            error_message = 'MUSICA step failed: MPAS (nVertLevels*nCells) does not match MICM grid size.'
-            return
-        end if
+        call validate_micm_step_dimensions(scalars, qv_mmr, rho_zz, zz, temperature, pressure, &
+                                           nVertLevels, nCells, error_code, error_message)
+        if (error_code /= 0) return
 
         call mpas_timer_start('chem_mpas_to_micm')
-
-        call sanitize_mmr_tracers(scalars, nVertLevels, nCells)
-
-        cell_stride = state%species_strides%grid_cell
-        var_stride  = state%species_strides%variable
-
-        do iCell = 1, nCells
-            do k = 1, nVertLevels
-                iGrid = (iCell - 1) * nVertLevels + k
-
-                rho_air = real(rho_zz(k, iCell), kind=real64) * real(zz(k, iCell), kind=real64)
-                if (.not. ieee_is_finite(rho_air) .or. rho_air <= tiny(1.0_real64)) rho_air = rho_air_floor
-                rho_air = max(rho_air, rho_air_floor)
-
-                t_air = real(temperature(k, iCell), kind=real64)
-                if (.not. ieee_is_finite(t_air) .or. t_air <= 0.0_real64) t_air = 280.0_real64
-                t_air = min(max(t_air, t_air_min), t_air_max)
-
-                p_air = real(pressure(k, iCell), kind=real64)
-                if (.not. ieee_is_finite(p_air) .or. p_air <= 0.0_real64) p_air = 101325.0_real64
-                p_air = min(max(p_air, p_air_min), p_air_max)
-
-                state%conditions(iGrid)%temperature = t_air
-                state%conditions(iGrid)%pressure = p_air
-                state%conditions(iGrid)%air_density = rho_air / mw_air_kg_per_mol
-                air_mol = rho_air / mw_air_kg_per_mol
-
-                do i_sp = 1, n_chem_species
-                    if (.not. chem_species(i_sp)%maps_to_mpas .and. .not. chem_species(i_sp)%is_o2 .and. &
-                        .not. chem_species(i_sp)%is_n2 .and. .not. chem_species(i_sp)%is_h2o) cycle
-                    iConc = (iGrid - 1) * cell_stride + &
-                            (chem_species(i_sp)%micm_index - 1) * var_stride + 1
-
-                    if (chem_species(i_sp)%is_o2) then
-                        q_mmr = 0.0_real64
-                        if (chem_species(i_sp)%mpas_index >= 1) then
-                            q_mmr = real(scalars(chem_species(i_sp)%mpas_index, k, iCell), kind=real64)
-                        end if
-                        if (.not. ieee_is_finite(q_mmr) .or. q_mmr <= 0.0_real64) then
-                            q_mmr = vmr_o2 * mw_o2_kg_per_mol / mw_air_kg_per_mol
-                        end if
-                        state%concentrations(iConc) = q_mmr * rho_air / chem_species(i_sp)%molar_mass
-                    else if (chem_species(i_sp)%is_n2) then
-                        q_mmr = 0.0_real64
-                        if (chem_species(i_sp)%mpas_index >= 1) then
-                            q_mmr = real(scalars(chem_species(i_sp)%mpas_index, k, iCell), kind=real64)
-                        end if
-                        if (.not. ieee_is_finite(q_mmr) .or. q_mmr <= 0.0_real64) then
-                            q_mmr = vmr_n2 * mw_n2_kg_per_mol / mw_air_kg_per_mol
-                        end if
-                        state%concentrations(iConc) = q_mmr * rho_air / chem_species(i_sp)%molar_mass
-                    else if (chem_species(i_sp)%is_h2o) then
-                        qv_air = real(qv_mmr(k, iCell), kind=real64)
-                        if (.not. ieee_is_finite(qv_air) .or. qv_air < 0.0_real64) qv_air = 0.0_real64
-                        q_mmr = qv_air
-                        if (q_mmr <= 0.0_real64 .and. chem_species(i_sp)%mpas_index >= 1) then
-                            q_mmr = real(scalars(chem_species(i_sp)%mpas_index, k, iCell), kind=real64)
-                            if (.not. ieee_is_finite(q_mmr) .or. q_mmr < 0.0_real64) q_mmr = 0.0_real64
-                        end if
-                        state%concentrations(iConc) = q_mmr * rho_air / chem_species(i_sp)%molar_mass
-                    else
-                        if (chem_species(i_sp)%mpas_index < 1) cycle
-                        q_mmr = max(0.0_real64, real(scalars(chem_species(i_sp)%mpas_index, k, iCell), kind=real64))
-                        state%concentrations(iConc) = q_mmr * rho_air / chem_species(i_sp)%molar_mass
-                    end if
-                end do
-            end do
-        end do
-
-        call sanitize_micm_state(state, n_bad_conc, n_bad_rate)
-        if (n_bad_conc > 0 .or. n_bad_rate > 0) then
-            call mpas_log_write('[MUSICA] Sanitized MICM inputs (NaN/Inf): concentrations=$i rate_parameters=$i', &
-                                intArgs=[n_bad_conc, n_bad_rate])
-        end if
-
+        call mpas_to_micm_state(scalars, qv_mmr, rho_zz, zz, temperature, pressure, nVertLevels, nCells)
         call mpas_timer_stop('chem_mpas_to_micm')
 
-        elapsed = 0.0_real64
-        sub_call = 0
-        min_attempt_dt = max(1.0e-12_real64, 1.0e-6_real64 * real(time_step, kind=real64))
-
         call mpas_timer_start('chem_micm_solve')
-
-        do while (elapsed < real(time_step, kind=real64) .and. sub_call < MAX_SUB_CALLS)
-            remaining = real(time_step, kind=real64) - elapsed
-            attempt_dt = remaining
-            stall_retry = 0
-
-            do
-                sub_call = sub_call + 1
-                call micm%solve(attempt_dt, state, solver_state, solver_stats, error)
-                if (has_error_occurred(error, error_message, error_code)) then
-                    call mpas_timer_stop('chem_micm_solve')
-                    return
-                end if
-
-                advanced = solver_stats%final_time()
-                if (ieee_is_finite(advanced) .and. advanced > 0.0_real64) exit
-
-                call sanitize_micm_state(state, n_bad_conc, n_bad_rate)
-                stall_retry = stall_retry + 1
-                n_micm_stall_retries_total = n_micm_stall_retries_total + 1
-
-                if (stall_retry > MAX_STALL_RETRIES .or. attempt_dt <= min_attempt_dt) then
-                    error_code = 1
-                    error_message = '[MUSICA] MICM stalled at sub-step; solver state: ' // &
-                                    solver_state%get_char_array()
-                    call mpas_timer_stop('chem_micm_solve')
-                    return
-                end if
-
-                attempt_dt = max(0.5_real64 * attempt_dt, min_attempt_dt)
-            end do
-
-            if (stall_retry > 0) then
-                call mpas_log_write('[MUSICA] MICM recovered after stall retries: $i', &
-                                    intArgs=[stall_retry])
-            end if
-
-            elapsed = elapsed + advanced
-        end do
-
+        call solve_micm_interval(time_step, error_code, error_message)
         call mpas_timer_stop('chem_micm_solve')
-
-        if (elapsed < real(time_step, kind=real64)) then
-            error_code = 1
-            error_message = '[MUSICA] MICM sub-step budget exhausted.'
-            return
-        end if
+        if (error_code /= 0) return
 
         call mpas_timer_start('chem_micm_to_mpas')
-
-        do iCell = 1, nCells
-            do k = 1, nVertLevels
-                iGrid = (iCell - 1) * nVertLevels + k
-                rho_air = real(rho_zz(k, iCell), kind=real64) * real(zz(k, iCell), kind=real64)
-                if (.not. ieee_is_finite(rho_air) .or. rho_air <= tiny(1.0_real64)) rho_air = rho_air_floor
-                rho_air = max(rho_air, rho_air_floor)
-
-                do i_sp = 1, n_chem_species
-                    if (.not. chem_species(i_sp)%maps_to_mpas .and. .not. chem_species(i_sp)%is_o2 .and. &
-                        .not. chem_species(i_sp)%is_n2 .and. .not. chem_species(i_sp)%is_h2o) cycle
-                    iConc = (iGrid - 1) * cell_stride + &
-                            (chem_species(i_sp)%micm_index - 1) * var_stride + 1
-                    if (chem_species(i_sp)%mpas_index < 1) cycle
-                    q_mmr = max(0.0_real64, safe_finite(state%concentrations(iConc))) * &
-                            chem_species(i_sp)%molar_mass / rho_air
-                    scalars(chem_species(i_sp)%mpas_index, k, iCell) = real(q_mmr, kind=RKIND)
-                end do
-            end do
-        end do
-
+        call micm_to_mpas_scalars(scalars, rho_zz, zz, nVertLevels, nCells)
         call mpas_timer_stop('chem_micm_to_mpas')
 
     end subroutine musica_step
@@ -678,6 +555,305 @@ module mpas_musica
         end do
 
     end subroutine musica_set_photolysis_rates
+
+    !------------------------------------------------------------------------
+    !  subroutine validate_micm_step_dimensions
+    !
+    !> \brief Validate MPAS arrays before using them as MICM state inputs.
+    !------------------------------------------------------------------------
+    subroutine validate_micm_step_dimensions(scalars, qv_mmr, rho_zz, zz, temperature, pressure, &
+                                             nVertLevels, nCells, error_code, error_message)
+
+        use mpas_kind_types, only : RKIND
+
+        real(kind=RKIND), dimension(:,:,:), intent(in) :: scalars
+        real(kind=RKIND), dimension(:,:), intent(in) :: qv_mmr, rho_zz, zz, temperature, pressure
+        integer, intent(in) :: nVertLevels, nCells
+        integer, intent(out) :: error_code
+        character(len=:), allocatable, intent(out) :: error_message
+
+        error_code = 0
+        error_message = ''
+
+        if (size(scalars, 2) < nVertLevels .or. size(scalars, 3) < nCells) then
+            error_code = 1
+            error_message = 'MUSICA step failed: scalars dimensions do not match chemistry grid.'
+            return
+        end if
+
+        if (size(rho_zz, 1) /= nVertLevels .or. size(rho_zz, 2) /= nCells .or. &
+            size(zz, 1) /= nVertLevels .or. size(zz, 2) /= nCells .or. &
+            size(temperature, 1) /= nVertLevels .or. size(temperature, 2) /= nCells .or. &
+            size(pressure, 1) /= nVertLevels .or. size(pressure, 2) /= nCells) then
+            error_code = 1
+            error_message = 'MUSICA step failed: environment dimensions do not match chemistry grid.'
+            return
+        end if
+
+        if (nVertLevels * nCells /= number_of_micm_grid_cells) then
+            error_code = 1
+            error_message = 'MUSICA step failed: MPAS (nVertLevels*nCells) does not match MICM grid size.'
+        end if
+
+    end subroutine validate_micm_step_dimensions
+
+    !------------------------------------------------------------------------
+    !  subroutine mpas_to_micm_state
+    !
+    !> \brief Fill MICM conditions and concentrations from MPAS fields.
+    !------------------------------------------------------------------------
+    subroutine mpas_to_micm_state(scalars, qv_mmr, rho_zz, zz, temperature, pressure, nVertLevels, nCells)
+
+        use mpas_kind_types, only : RKIND
+        use mpas_log, only : mpas_log_write
+
+        real(kind=RKIND), dimension(:,:,:), intent(inout) :: scalars
+        real(kind=RKIND), dimension(:,:), intent(in) :: qv_mmr, rho_zz, zz, temperature, pressure
+        integer, intent(in) :: nVertLevels, nCells
+
+        integer :: iCell, k, iGrid, i_sp, iConc
+        integer :: cell_stride, var_stride
+        integer :: n_bad_conc, n_bad_rate
+        real(kind=real64) :: rho_air, q_mmr
+
+        call sanitize_mmr_tracers(scalars, nVertLevels, nCells)
+
+        cell_stride = state%species_strides%grid_cell
+        var_stride  = state%species_strides%variable
+
+        do iCell = 1, nCells
+            do k = 1, nVertLevels
+                iGrid = (iCell - 1) * nVertLevels + k
+                rho_air = mpas_air_density(rho_zz(k, iCell), zz(k, iCell))
+
+                state%conditions(iGrid)%temperature = bounded_temperature(temperature(k, iCell))
+                state%conditions(iGrid)%pressure = bounded_pressure(pressure(k, iCell))
+                state%conditions(iGrid)%air_density = rho_air / mw_air_kg_per_mol
+
+                do i_sp = 1, n_chem_species
+                    if (.not. species_active_for_micm(i_sp)) cycle
+                    iConc = micm_concentration_index(iGrid, i_sp, cell_stride, var_stride)
+                    q_mmr = species_mmr_for_micm(i_sp, scalars, qv_mmr, k, iCell)
+                    state%concentrations(iConc) = q_mmr * rho_air / chem_species(i_sp)%molar_mass
+                end do
+            end do
+        end do
+
+        call sanitize_micm_state(state, n_bad_conc, n_bad_rate)
+        if (n_bad_conc > 0 .or. n_bad_rate > 0) then
+            call mpas_log_write('[MUSICA] Sanitized MICM inputs (NaN/Inf): concentrations=$i rate_parameters=$i', &
+                                intArgs=[n_bad_conc, n_bad_rate])
+        end if
+
+    end subroutine mpas_to_micm_state
+
+    !------------------------------------------------------------------------
+    !  subroutine solve_micm_interval
+    !
+    !> \brief Advance MICM over one requested chemistry interval.
+    !------------------------------------------------------------------------
+    subroutine solve_micm_interval(time_step, error_code, error_message)
+
+        use mpas_kind_types, only : RKIND
+        use mpas_log, only : mpas_log_write
+        use musica_util, only : error_t, string_t
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+
+        real(kind=RKIND), intent(in) :: time_step
+        integer, intent(out) :: error_code
+        character(len=:), allocatable, intent(out) :: error_message
+
+        integer, parameter :: MAX_SUB_CALLS = 100
+        integer, parameter :: MAX_STALL_RETRIES = 20
+        type(error_t) :: error
+        type(string_t) :: solver_state
+        type(solver_stats_t) :: solver_stats
+        real(kind=real64) :: elapsed, remaining, advanced, attempt_dt, min_attempt_dt
+        integer :: sub_call, stall_retry, n_bad_conc, n_bad_rate
+
+        error_code = 0
+        error_message = ''
+        elapsed = 0.0_real64
+        sub_call = 0
+        min_attempt_dt = max(1.0e-12_real64, 1.0e-6_real64 * real(time_step, kind=real64))
+
+        do while (elapsed < real(time_step, kind=real64) .and. sub_call < MAX_SUB_CALLS)
+            remaining = real(time_step, kind=real64) - elapsed
+            attempt_dt = remaining
+            stall_retry = 0
+
+            do
+                sub_call = sub_call + 1
+                call micm%solve(attempt_dt, state, solver_state, solver_stats, error)
+                if (has_error_occurred(error, error_message, error_code)) return
+
+                advanced = solver_stats%final_time()
+                if (ieee_is_finite(advanced) .and. advanced > 0.0_real64) exit
+
+                call sanitize_micm_state(state, n_bad_conc, n_bad_rate)
+                stall_retry = stall_retry + 1
+                n_micm_stall_retries_total = n_micm_stall_retries_total + 1
+
+                if (stall_retry > MAX_STALL_RETRIES .or. attempt_dt <= min_attempt_dt) then
+                    error_code = 1
+                    error_message = '[MUSICA] MICM stalled at sub-step; solver state: ' // &
+                                    solver_state%get_char_array()
+                    return
+                end if
+
+                attempt_dt = max(0.5_real64 * attempt_dt, min_attempt_dt)
+            end do
+
+            if (stall_retry > 0) then
+                call mpas_log_write('[MUSICA] MICM recovered after stall retries: $i', &
+                                    intArgs=[stall_retry])
+            end if
+
+            elapsed = elapsed + advanced
+        end do
+
+        if (elapsed < real(time_step, kind=real64)) then
+            error_code = 1
+            error_message = '[MUSICA] MICM sub-step budget exhausted.'
+        end if
+
+    end subroutine solve_micm_interval
+
+    !------------------------------------------------------------------------
+    !  subroutine micm_to_mpas_scalars
+    !
+    !> \brief Convert MICM concentrations back to MPAS mass mixing ratios.
+    !------------------------------------------------------------------------
+    subroutine micm_to_mpas_scalars(scalars, rho_zz, zz, nVertLevels, nCells)
+
+        use mpas_kind_types, only : RKIND
+
+        real(kind=RKIND), dimension(:,:,:), intent(inout) :: scalars
+        real(kind=RKIND), dimension(:,:), intent(in) :: rho_zz, zz
+        integer, intent(in) :: nVertLevels, nCells
+
+        integer :: iCell, k, iGrid, i_sp, iConc
+        integer :: cell_stride, var_stride
+        real(kind=real64) :: rho_air, q_mmr
+
+        cell_stride = state%species_strides%grid_cell
+        var_stride  = state%species_strides%variable
+
+        do iCell = 1, nCells
+            do k = 1, nVertLevels
+                iGrid = (iCell - 1) * nVertLevels + k
+                rho_air = mpas_air_density(rho_zz(k, iCell), zz(k, iCell))
+
+                do i_sp = 1, n_chem_species
+                    if (.not. species_active_for_micm(i_sp)) cycle
+                    if (chem_species(i_sp)%mpas_index < 1) cycle
+                    iConc = micm_concentration_index(iGrid, i_sp, cell_stride, var_stride)
+                    q_mmr = max(0.0_real64, safe_finite(state%concentrations(iConc))) * &
+                            chem_species(i_sp)%molar_mass / rho_air
+                    scalars(chem_species(i_sp)%mpas_index, k, iCell) = real(q_mmr, kind=RKIND)
+                end do
+            end do
+        end do
+
+    end subroutine micm_to_mpas_scalars
+
+    !------------------------------------------------------------------------
+    !  MICM conversion helpers
+    !------------------------------------------------------------------------
+    logical function species_active_for_micm(i_sp)
+        integer, intent(in) :: i_sp
+        species_active_for_micm = chem_species(i_sp)%maps_to_mpas .or. &
+                                  chem_species(i_sp)%is_o2 .or. &
+                                  chem_species(i_sp)%is_n2 .or. &
+                                  chem_species(i_sp)%is_h2o
+    end function species_active_for_micm
+
+    integer function micm_concentration_index(iGrid, i_sp, cell_stride, var_stride)
+        integer, intent(in) :: iGrid, i_sp, cell_stride, var_stride
+        micm_concentration_index = (iGrid - 1) * cell_stride + &
+                                   (chem_species(i_sp)%micm_index - 1) * var_stride + 1
+    end function micm_concentration_index
+
+    real(kind=real64) function mpas_air_density(rho_zz_value, zz_value)
+        use mpas_kind_types, only : RKIND
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        real(kind=RKIND), intent(in) :: rho_zz_value, zz_value
+        real(kind=real64), parameter :: rho_air_floor = 1.0e-12_real64
+        mpas_air_density = real(rho_zz_value, kind=real64) * real(zz_value, kind=real64)
+        if (.not. ieee_is_finite(mpas_air_density) .or. mpas_air_density <= tiny(1.0_real64)) then
+            mpas_air_density = rho_air_floor
+        end if
+        mpas_air_density = max(mpas_air_density, rho_air_floor)
+    end function mpas_air_density
+
+    real(kind=real64) function bounded_temperature(value)
+        use mpas_kind_types, only : RKIND
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        real(kind=RKIND), intent(in) :: value
+        bounded_temperature = real(value, kind=real64)
+        if (.not. ieee_is_finite(bounded_temperature) .or. bounded_temperature <= 0.0_real64) then
+            bounded_temperature = 280.0_real64
+        end if
+        bounded_temperature = min(max(bounded_temperature, 150.0_real64), 350.0_real64)
+    end function bounded_temperature
+
+    real(kind=real64) function bounded_pressure(value)
+        use mpas_kind_types, only : RKIND
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        real(kind=RKIND), intent(in) :: value
+        bounded_pressure = real(value, kind=real64)
+        if (.not. ieee_is_finite(bounded_pressure) .or. bounded_pressure <= 0.0_real64) then
+            bounded_pressure = 101325.0_real64
+        end if
+        bounded_pressure = min(max(bounded_pressure, 100.0_real64), 200000.0_real64)
+    end function bounded_pressure
+
+    real(kind=real64) function species_mmr_for_micm(i_sp, scalars, qv_mmr, k, iCell)
+        use mpas_kind_types, only : RKIND
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        integer, intent(in) :: i_sp, k, iCell
+        real(kind=RKIND), dimension(:,:,:), intent(in) :: scalars
+        real(kind=RKIND), dimension(:,:), intent(in) :: qv_mmr
+
+        species_mmr_for_micm = 0.0_real64
+
+        if (chem_species(i_sp)%is_o2) then
+            species_mmr_for_micm = scalar_mmr_or_zero(scalars, chem_species(i_sp)%mpas_index, k, iCell)
+            if (species_mmr_for_micm <= 0.0_real64) then
+                species_mmr_for_micm = vmr_o2 * mw_o2_kg_per_mol / mw_air_kg_per_mol
+            end if
+        else if (chem_species(i_sp)%is_n2) then
+            species_mmr_for_micm = scalar_mmr_or_zero(scalars, chem_species(i_sp)%mpas_index, k, iCell)
+            if (species_mmr_for_micm <= 0.0_real64) then
+                species_mmr_for_micm = vmr_n2 * mw_n2_kg_per_mol / mw_air_kg_per_mol
+            end if
+        else if (chem_species(i_sp)%is_h2o) then
+            species_mmr_for_micm = real(qv_mmr(k, iCell), kind=real64)
+            if (.not. ieee_is_finite(species_mmr_for_micm) .or. species_mmr_for_micm < 0.0_real64) then
+                species_mmr_for_micm = 0.0_real64
+            end if
+            if (species_mmr_for_micm <= 0.0_real64) then
+                species_mmr_for_micm = scalar_mmr_or_zero(scalars, chem_species(i_sp)%mpas_index, k, iCell)
+            end if
+        else
+            species_mmr_for_micm = scalar_mmr_or_zero(scalars, chem_species(i_sp)%mpas_index, k, iCell)
+        end if
+
+    end function species_mmr_for_micm
+
+    real(kind=real64) function scalar_mmr_or_zero(scalars, idx, k, iCell)
+        use mpas_kind_types, only : RKIND
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+        real(kind=RKIND), dimension(:,:,:), intent(in) :: scalars
+        integer, intent(in) :: idx, k, iCell
+
+        scalar_mmr_or_zero = 0.0_real64
+        if (idx < 1) return
+        scalar_mmr_or_zero = real(scalars(idx, k, iCell), kind=real64)
+        if (.not. ieee_is_finite(scalar_mmr_or_zero) .or. scalar_mmr_or_zero < 0.0_real64) then
+            scalar_mmr_or_zero = 0.0_real64
+        end if
+    end function scalar_mmr_or_zero
 
     !------------------------------------------------------------------------
     !  routine initialize_rate_parameters_defaults

@@ -15,8 +15,8 @@ dummy:
 OBJS = \
 	mpas_chem_utils.o \
 	mpas_chem_emissions_driver.o \
-	mpas_solar_geometry.o \
-	mpas_tuvx.o \
+	mpas_chem_solar_geometry.o \
+	mpas_chem_photolysis_tuvx.o \
 	mpas_chem_photolysis_driver.o \
 	mpas_atm_chemistry.o
 
@@ -34,7 +34,7 @@ ifeq ($(MUSICA),true)
 endif
 
 mpas_chem_emissions_driver.o: mpas_chem_utils.o
-mpas_chem_photolysis_driver.o: mpas_chem_utils.o mpas_solar_geometry.o mpas_tuvx.o
+mpas_chem_photolysis_driver.o: mpas_chem_utils.o mpas_chem_solar_geometry.o mpas_chem_photolysis_tuvx.o
 mpas_atm_chemistry.o: mpas_chem_utils.o mpas_chem_emissions_driver.o mpas_chem_photolysis_driver.o
 
 chem_interface: $(OBJS)

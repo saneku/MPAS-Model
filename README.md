@@ -58,3 +58,51 @@ only described below the src directory.
 Model cores are typically developed independently. For information about
 building and running a particular core, please refer to that core's user's
 guide.
+
+
+MPAS-Chem / MUSICA Development
+------------------------------
+
+This branch includes experimental MPAS-Chem development for coupling the MPAS
+atmosphere core with MUSICA chemistry components.
+
+Current chemistry capabilities include:
+
+* MICM chemistry configured with `config_micm_file` in the `&musica` namelist.
+* TUV-x photolysis configured with `config_tuvx_config_file`.
+* Dynamic emission species selected with `config_chem_emission_species`.
+* Extra passive or non-MICM tracers selected with
+  `config_chem_additional_species`.
+* Hourly anthropogenic emission input through the `chem_emissions` stream,
+  using files named like `emi.$Y-$M-$D_$h.$m.$s.nc`.
+
+Emission files should contain fields named `emi_<species>` for the species in
+`config_chem_emission_species`. The emission fields are treated as surface or
+layer fluxes in `kg m-2 s-1`; during chemistry stepping they are converted to
+mixing-ratio increments with the local air-column mass and added to the
+matching MPAS chemistry tracers.
+
+Regional chemistry boundary conditions use the standard MPAS limited-area LBC
+infrastructure. Dynamic chemistry species are added to the `lbc_scalars`
+var-array as `lbc_<species>` fields, and regional runs require compatible
+`lbc.*.nc` files containing those fields. Global runs do not use chemistry LBC
+files. IC/LBC chemistry fields must be prepared by Merra2BC or another
+preprocessor before running MPAS-Chem.
+
+Useful diagnostics include:
+
+* `cos_sza`, the cosine of the solar zenith angle used by chemistry
+  photolysis.
+* `photolysis_rates`, a dynamic var-array containing TUV-x photolysis rates
+  discovered from the selected TUV-x configuration.
+
+TUV-x also returns heating rates through its solver API. These are currently
+kept only as internal solver workspace; they are not written as diagnostics and
+are not coupled to MPAS thermodynamic or radiation tendencies.
+
+Relevant chemistry modules include:
+
+* `src/core_atmosphere/chemistry/mpas_chem_photolysis_driver.F`
+* `src/core_atmosphere/chemistry/mpas_chem_photolysis_tuvx.F`
+* `src/core_atmosphere/chemistry/mpas_chem_solar_geometry.F`
+* `src/core_atmosphere/chemistry/musica/mpas_musica.F`
